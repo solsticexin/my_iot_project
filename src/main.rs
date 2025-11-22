@@ -4,40 +4,148 @@
 mod config;
 mod dh11;
 mod fmt;
+mod st7735;
+
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::RgbColor,
+    prelude::*,
+    primitives::{PrimitiveStyle, Rectangle},
+};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
 use embassy_executor::Spawner;
-use embassy_stm32::gpio::{Flex, Speed};
+use embassy_stm32::{
+    gpio::{Flex, Level, Output, Speed},
+    spi::{self, Spi},
+    time::mhz,
+};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
+
 use embassy_time::{Duration, Timer};
+
 use fmt::{error, info};
 
+//全局静态变量
+static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
+    //===============================
+    //初始化全局配置
+    //===============================
     let config = config::stm_config();
     let p = embassy_stm32::init(config);
-    let mut dh11_pin = Flex::new(p.PA5);
+    //发送,接收
+    let sender = CHANNEL.sender();
+    let receiver = CHANNEL.receiver();
+    //===============================
+    //配置dh11
+    //===============================
+    let mut dh11_pin = Flex::new(p.PB11);
     dh11_pin.set_as_input_output(Speed::VeryHigh);
+    //===============================
+    //配置st7735
+    //===============================
+    let mut spi_config = spi::Config::default();
+    spi_config.frequency = mhz(15);
+    let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
+
+    // 配置控制引脚
+    // CS -> PA4, DC -> PB1, RES -> PB0
+    let _cs = Output::new(p.PA4, Level::Low, Speed::VeryHigh);
+    let dc = Output::new(p.PB1, Level::High, Speed::VeryHigh);
+    let rst = Output::new(p.PB0, Level::Low, Speed::VeryHigh);
+
+    let display = st7735::init_screen(spi, dc, rst);
+    //===============================
+    //执行dh11任务
+    //===============================
+    match spawner.spawn(dh11_task(dh11_pin, sender)) {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Failed to spawn task: {}", e);
+        }
+    }
+    match spawner.spawn(draw_task(display, receiver)) {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Failed to spawn draw_task: {}", e);
+        }
+    }
 
     loop {
-        dh11::wake_up_sensor(&mut dh11_pin).await;
-        match dh11::check_sensor_response(&mut dh11_pin) {
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+//===============================
+//draw任务
+//===============================
+#[embassy_executor::task]
+async fn draw_task(
+    mut display: st7735::St7735Display,
+    receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, [u8; 5], 2>,
+) {
+    loop {
+        let data = receiver.receive().await;
+        let hum_int = data[0];
+        let temp_int = data[2];
+
+        // --- 可视化显示 (画条形图) ---
+
+        // 1. 清除旧的图形 (用黑色矩形覆盖)
+        Rectangle::new(Point::new(10, 20), Size::new(100, 60))
+            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+            .draw(&mut display)
+            .unwrap();
+
+        // 2. 画温度条 (红色) - 长度根据温度值变化
+        let temp_len = (temp_int as u32).min(100) * 2; // 放大一点便于观察
+        Rectangle::new(Point::new(10, 30), Size::new(temp_len, 10))
+            .into_styled(PrimitiveStyle::with_fill(Rgb565::RED))
+            .draw(&mut display)
+            .unwrap();
+
+        // 3. 画湿度条 (青色)
+        let hum_len = (hum_int as u32).min(100);
+        Rectangle::new(Point::new(10, 50), Size::new(hum_len, 10))
+            .into_styled(PrimitiveStyle::with_fill(Rgb565::CYAN))
+            .draw(&mut display)
+            .unwrap();
+        Timer::after(Duration::from_secs(2)).await
+    }
+}
+//===============================
+//配置dh11任务
+//===============================
+#[embassy_executor::task]
+async fn dh11_task(
+    mut pin: Flex<'static>,
+    sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, [u8; 5], 2>,
+) {
+    loop {
+        dh11::wake_up_sensor(&mut pin).await;
+        match dh11::check_sensor_response(&mut pin) {
             Ok(_) => (),
             Err(_) => {
                 Timer::after(Duration::from_secs(2)).await;
                 continue;
             }
         };
-        match dh11::dh11_read(&mut dh11_pin) {
+        match dh11::dh11_read(&mut pin) {
             Ok(data) => {
                 info!("dh11_read: {},{},{},{}", data[0], data[1], data[2], data[3]);
+                sender.send(data).await;
             }
             Err(e) => {
                 error!("dh11_read error: {}", e);
             }
         };
-        Timer::after(Duration::from_millis(2000)).await;
+        Timer::after(Duration::from_secs(2)).await;
     }
 }

@@ -14,7 +14,7 @@ pub async fn wake_up_sensor(pa5: &mut Flex<'_>) {
     Timer::after(Duration::from_millis(20)).await;
     pa5.set_high();
     let mut delay = Delay;
-    delay.delay_us(30);
+    delay.delay_us(45);
 }
 
 pub fn check_sensor_response(pa5: &mut Flex<'_>) -> Result<(), Dh11Error> {
