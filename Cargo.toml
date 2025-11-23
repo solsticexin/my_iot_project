@@ -30,9 +30,12 @@ embassy-stm32 = { version = "0.4.0", features = [
     "time-driver-any",
 ] }
 embedded-hal = "1.0.0"
-st7735-lcd = "0.9.0"
+# st7735-lcd = "0.9.0"
 embedded-graphics = "0.8.1"
 embassy-hal-internal = "0.3.0"
+lcd-async = "0.1.1"
+static_cell = "2.1.1"
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
 
 [[bin]]
 name = "my_iot_project"

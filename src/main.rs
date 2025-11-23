@@ -4,14 +4,14 @@
 mod config;
 mod dh11;
 mod fmt;
-mod st7735;
-
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::RgbColor,
-    prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
-};
+// mod st7735;
+mod st7735_async;
+// use embedded_graphics::{
+//     pixelcolor::Rgb565,
+//     prelude::RgbColor,
+//     prelude::*,
+//     primitives::{PrimitiveStyle, Rectangle},
+// };
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -25,14 +25,12 @@ use embassy_stm32::{
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-
 use embassy_time::{Duration, Timer};
-
 use fmt::{error, info};
+// use static_cell::StaticCell;
 
 //全局静态变量
 static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     //===============================
@@ -53,15 +51,16 @@ async fn main(spawner: Spawner) {
     //===============================
     let mut spi_config = spi::Config::default();
     spi_config.frequency = mhz(15);
-    let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
-
+    // let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
+    let spi_async = Spi::new(
+        p.SPI1, p.PA5, p.PA7, p.PA6, p.DMA1_CH3, p.DMA1_CH2, spi_config,
+    );
     // 配置控制引脚
     // CS -> PA4, DC -> PB1, RES -> PB0
-    let _cs = Output::new(p.PA4, Level::Low, Speed::VeryHigh);
+    let cs = Output::new(p.PA4, Level::Low, Speed::VeryHigh);
     let dc = Output::new(p.PB1, Level::High, Speed::VeryHigh);
     let rst = Output::new(p.PB0, Level::Low, Speed::VeryHigh);
-
-    let display = st7735::init_screen(spi, dc, rst);
+    // let display = st7735::init_screen(spi, dc, rst);
     //===============================
     //执行dh11任务
     //===============================
@@ -71,7 +70,7 @@ async fn main(spawner: Spawner) {
             error!("Failed to spawn task: {}", e);
         }
     }
-    match spawner.spawn(draw_task(display, receiver)) {
+    match spawner.spawn(st7735_async::draw_task(spi_async, dc, rst, cs, receiver)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn draw_task: {}", e);
@@ -86,40 +85,40 @@ async fn main(spawner: Spawner) {
 //===============================
 //draw任务
 //===============================
-#[embassy_executor::task]
-async fn draw_task(
-    mut display: st7735::St7735Display,
-    receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, [u8; 5], 2>,
-) {
-    loop {
-        let data = receiver.receive().await;
-        let hum_int = data[0];
-        let temp_int = data[2];
+// #[embassy_executor::task]
+// async fn draw_task(
+//     mut display: st7735::St7735Display,
+//     receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, [u8; 5], 2>,
+// ) {
+//     loop {
+//         let data = receiver.receive().await;
+//         let hum_int = data[0];
+//         let temp_int = data[2];
 
-        // --- 可视化显示 (画条形图) ---
+//         // --- 可视化显示 (画条形图) ---
 
-        // 1. 清除旧的图形 (用黑色矩形覆盖)
-        Rectangle::new(Point::new(10, 20), Size::new(100, 60))
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
-            .draw(&mut display)
-            .unwrap();
+//         // 1. 清除旧的图形 (用黑色矩形覆盖)
+//         Rectangle::new(Point::new(10, 20), Size::new(100, 60))
+//             .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+//             .draw(&mut display)
+//             .unwrap();
 
-        // 2. 画温度条 (红色) - 长度根据温度值变化
-        let temp_len = (temp_int as u32).min(100) * 2; // 放大一点便于观察
-        Rectangle::new(Point::new(10, 30), Size::new(temp_len, 10))
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::RED))
-            .draw(&mut display)
-            .unwrap();
+//         // 2. 画温度条 (红色) - 长度根据温度值变化
+//         let temp_len = (temp_int as u32).min(100) * 2; // 放大一点便于观察
+//         Rectangle::new(Point::new(10, 30), Size::new(temp_len, 10))
+//             .into_styled(PrimitiveStyle::with_fill(Rgb565::RED))
+//             .draw(&mut display)
+//             .unwrap();
 
-        // 3. 画湿度条 (青色)
-        let hum_len = (hum_int as u32).min(100);
-        Rectangle::new(Point::new(10, 50), Size::new(hum_len, 10))
-            .into_styled(PrimitiveStyle::with_fill(Rgb565::CYAN))
-            .draw(&mut display)
-            .unwrap();
-        Timer::after(Duration::from_secs(2)).await
-    }
-}
+//         // 3. 画湿度条 (青色)
+//         let hum_len = (hum_int as u32).min(100);
+//         Rectangle::new(Point::new(10, 50), Size::new(hum_len, 10))
+//             .into_styled(PrimitiveStyle::with_fill(Rgb565::CYAN))
+//             .draw(&mut display)
+//             .unwrap();
+//         Timer::after(Duration::from_secs(2)).await
+//     }
+// }
 //===============================
 //配置dh11任务
 //===============================
