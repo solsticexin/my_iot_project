@@ -1,5 +1,4 @@
 use crate::fmt::{error, info};
-use embassy_executor::task;
 use embassy_stm32::gpio::Output;
 use embassy_stm32::mode::Async;
 use embassy_stm32::spi::Spi;
@@ -22,7 +21,7 @@ const HEIGHT: usize = 160;
 const ROWS_PER_BUFFER: usize = 10;
 static LINE_BUFFER: StaticCell<[u8; WIDTH * ROWS_PER_BUFFER * 2]> = StaticCell::new();
 
-#[task]
+#[embassy_executor::task]
 pub async fn draw_task(
     spi: Spi<'static, Async>,
     dc: Output<'static>,
