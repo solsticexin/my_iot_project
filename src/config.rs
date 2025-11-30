@@ -1,4 +1,6 @@
-use embassy_stm32::{rcc, time::mhz};
+use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
 pub fn stm_config() -> embassy_stm32::Config {
     let mut stm_config = embassy_stm32::Config::default();
     let clocks_config = clocks_config();
@@ -26,3 +28,16 @@ fn clocks_config() -> rcc::Config {
     config.ls = rcc::LsConfig::default();
     config
 }
+// 绑定中断
+bind_interrupts!(pub struct Irqs {
+    I2C1_EV => embassy_stm32::i2c::EventInterruptHandler<peripherals::I2C1>;
+    I2C1_ER => embassy_stm32::i2c::ErrorInterruptHandler<peripherals::I2C1>;
+});
+
+//BH1750 常量
+pub const BH1750_ADDR: u8 = 0x23; //接地时的地址
+pub const CMD_POWER_ON: u8 = 0x01u8; //通电指令
+pub const CMD_H_RES_MODE: u8 = 0x10; //连续高分辨率模式
+
+//全局静态变量
+pub static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();

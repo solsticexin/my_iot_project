@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod bh1750;
 mod config;
 mod dh11;
 mod fmt;
@@ -20,17 +21,17 @@ use {defmt_rtt as _, panic_probe as _};
 use embassy_executor::Spawner;
 use embassy_stm32::{
     gpio::{Flex, Level, Output, Speed},
+    i2c::{I2c, Master},
+    mode::Async,
     spi::{self, Spi},
-    time::mhz,
+    time::{khz, mhz},
 };
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Channel;
-use embassy_time::{Duration, Timer};
-use fmt::{error, info};
-// use static_cell::StaticCell;
 
-//全局静态变量
-static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
+use fmt::error;
+use static_cell::StaticCell;
+
+static I2C_BH1750: StaticCell<I2c<'static, Async, Master>> = StaticCell::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     //===============================
@@ -39,8 +40,8 @@ async fn main(spawner: Spawner) {
     let config = config::stm_config();
     let p = embassy_stm32::init(config);
     //发送,接收
-    let sender = CHANNEL.sender();
-    let receiver = CHANNEL.receiver();
+    let sender = config::CHANNEL.sender();
+    let receiver = config::CHANNEL.receiver();
     //===============================
     //配置dh11
     //===============================
@@ -48,7 +49,7 @@ async fn main(spawner: Spawner) {
     dh11_pin.set_as_input_output(Speed::VeryHigh);
     //===============================
     //配置st7735
-    //===============================
+
     let mut spi_config = spi::Config::default();
     spi_config.frequency = mhz(15);
     // let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
@@ -62,9 +63,26 @@ async fn main(spawner: Spawner) {
     let rst = Output::new(p.PB0, Level::Low, Speed::VeryHigh);
     // let display = st7735::init_screen(spi, dc, rst);
     //===============================
-    //执行dh11任务
+
     //===============================
-    match spawner.spawn(dh11_task(dh11_pin, sender)) {
+    //IIC引脚配置 ，BH1750传感器
+    let mut i2c_config = embassy_stm32::i2c::Config::default();
+    i2c_config.frequency = khz(100);
+    let i2c_bh1750 = I2C_BH1750.init(I2c::new(
+        p.I2C1,
+        p.PB6,
+        p.PB7,
+        config::Irqs,
+        p.DMA1_CH6,
+        p.DMA1_CH7,
+        i2c_config,
+    ));
+
+    //===============================
+
+    //===============================
+    //执行dh11任务
+    match spawner.spawn(dh11::dh11_task(dh11_pin, sender)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn task: {}", e);
@@ -76,10 +94,13 @@ async fn main(spawner: Spawner) {
             error!("Failed to spawn draw_task: {}", e);
         }
     }
-
-    loop {
-        Timer::after(Duration::from_secs(1)).await;
+    match spawner.spawn(bh1750::bh1750_read(i2c_bh1750)) {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Failed to spawn bh1750_read task: {}", e);
+        }
     }
+    //===============================
 }
 
 //===============================
@@ -119,32 +140,3 @@ async fn main(spawner: Spawner) {
 //         Timer::after(Duration::from_secs(2)).await
 //     }
 // }
-//===============================
-//配置dh11任务
-//===============================
-#[embassy_executor::task]
-async fn dh11_task(
-    mut pin: Flex<'static>,
-    sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, [u8; 5], 2>,
-) {
-    loop {
-        dh11::wake_up_sensor(&mut pin).await;
-        match dh11::check_sensor_response(&mut pin) {
-            Ok(_) => (),
-            Err(_) => {
-                Timer::after(Duration::from_secs(2)).await;
-                continue;
-            }
-        };
-        match dh11::dh11_read(&mut pin) {
-            Ok(data) => {
-                info!("dh11_read: {},{},{},{}", data[0], data[1], data[2], data[3]);
-                sender.send(data).await;
-            }
-            Err(e) => {
-                error!("dh11_read error: {}", e);
-            }
-        };
-        Timer::after(Duration::from_secs(2)).await;
-    }
-}

@@ -1,7 +1,37 @@
 use defmt::{error, info};
 use embassy_stm32::gpio::Flex;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Delay, Duration, Instant, Timer};
 use embedded_hal::delay::DelayNs;
+//===============================
+//配置dh11任务
+//===============================
+#[embassy_executor::task]
+pub async fn dh11_task(
+    mut pin: Flex<'static>,
+    sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, [u8; 5], 2>,
+) {
+    loop {
+        wake_up_sensor(&mut pin).await;
+        match check_sensor_response(&mut pin) {
+            Ok(_) => (),
+            Err(_) => {
+                Timer::after(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+        match dh11_read(&mut pin) {
+            Ok(data) => {
+                info!("dh11_read: {},{},{},{}", data[0], data[1], data[2], data[3]);
+                sender.send(data).await;
+            }
+            Err(e) => {
+                error!("dh11_read error: {}", e);
+            }
+        };
+        Timer::after(Duration::from_secs(2)).await;
+    }
+}
 
 #[derive(Debug, Clone, Copy, defmt::Format)]
 pub enum Dh11Error {
@@ -9,7 +39,7 @@ pub enum Dh11Error {
     ChecksumError,
     TimeAnomaly,
 }
-pub async fn wake_up_sensor(pa5: &mut Flex<'_>) {
+async fn wake_up_sensor(pa5: &mut Flex<'_>) {
     pa5.set_low();
     Timer::after(Duration::from_millis(20)).await;
     pa5.set_high();
@@ -17,7 +47,7 @@ pub async fn wake_up_sensor(pa5: &mut Flex<'_>) {
     delay.delay_us(45);
 }
 
-pub fn check_sensor_response(pa5: &mut Flex<'_>) -> Result<(), Dh11Error> {
+fn check_sensor_response(pa5: &mut Flex<'_>) -> Result<(), Dh11Error> {
     let low_pulse = match measure_pulse_width(pa5, false, 200) {
         Ok(pulse) => pulse,
         Err(_) => {
@@ -65,7 +95,7 @@ fn wait_for_level(pin: &mut Flex<'_>, target: bool, timeout_us: u64) -> Result<(
     }
 }
 
-pub fn dh11_read(pin: &mut Flex<'_>) -> Result<[u8; 5], Dh11Error> {
+fn dh11_read(pin: &mut Flex<'_>) -> Result<[u8; 5], Dh11Error> {
     let mut bytes = [0u8; 5];
     for bit_index in 0..40 {
         if let Err(_) = wait_for_level(pin, true, 100) {
