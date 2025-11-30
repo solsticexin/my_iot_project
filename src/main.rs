@@ -21,16 +21,12 @@ use {defmt_rtt as _, panic_probe as _};
 use embassy_executor::Spawner;
 use embassy_stm32::{
     gpio::{Flex, Level, Output, Speed},
-    i2c::{I2c, Master},
-    mode::Async,
+    i2c::I2c,
     spi::{self, Spi},
     time::{khz, mhz},
 };
 
 use fmt::error;
-use static_cell::StaticCell;
-
-static I2C_BH1750: StaticCell<I2c<'static, Async, Master>> = StaticCell::new();
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -68,7 +64,7 @@ async fn main(spawner: Spawner) {
     //IIC引脚配置 ，BH1750传感器
     let mut i2c_config = embassy_stm32::i2c::Config::default();
     i2c_config.frequency = khz(100);
-    let i2c_bh1750 = I2C_BH1750.init(I2c::new(
+    let i2c_bh1750 = I2c::new(
         p.I2C1,
         p.PB6,
         p.PB7,
@@ -76,7 +72,7 @@ async fn main(spawner: Spawner) {
         p.DMA1_CH6,
         p.DMA1_CH7,
         i2c_config,
-    ));
+    );
 
     //===============================
 
