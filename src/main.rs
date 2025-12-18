@@ -5,7 +5,7 @@ mod bh1750;
 mod config;
 mod dh11;
 mod fmt;
-// mod st7735;
+mod st7735;
 mod st7735_async;
 // use embedded_graphics::{
 //     pixelcolor::Rgb565,
@@ -49,14 +49,14 @@ async fn main(spawner: Spawner) {
     let mut spi_config = spi::Config::default();
     spi_config.frequency = mhz(15);
     // let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
-    let spi_async = Spi::new(
+    let mut spi_async = Spi::new(
         p.SPI1, p.PA5, p.PA7, p.PA6, p.DMA1_CH3, p.DMA1_CH2, spi_config,
     );
     // 配置控制引脚
     // CS -> PA4, DC -> PB1, RES -> PB0
     let cs = Output::new(p.PA4, Level::Low, Speed::VeryHigh);
-    let dc = Output::new(p.PB1, Level::High, Speed::VeryHigh);
-    let rst = Output::new(p.PB0, Level::Low, Speed::VeryHigh);
+    let mut dc = Output::new(p.PB1, Level::High, Speed::VeryHigh);
+    let mut rst = Output::new(p.PB0, Level::Low, Speed::VeryHigh);
     // let display = st7735::init_screen(spi, dc, rst);
     //===============================
 
