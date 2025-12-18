@@ -10,7 +10,7 @@ pub type I2cDriver = I2c<'static, Async, Master>;
 /// BH1750 光照传感器读取任务
 /// 该任务获取 I2C 驱动的所有权，进行传感器初始化和周期性读取光照数据
 #[embassy_executor::task]
-pub async fn bh1750_read(i2c: I2cDriver) {
+pub async fn bh1750_read(mut i2c: I2cDriver) {
     defmt::info!("BH1750 任务已启动");
 
     // 初始化传感器：首先向设备发送通电命令
