@@ -6,13 +6,13 @@ mod config;
 mod dh11;
 mod fmt;
 mod st7735;
-mod st7735_async;
-// use embedded_graphics::{
-//     pixelcolor::Rgb565,
-//     prelude::RgbColor,
-//     prelude::*,
-//     primitives::{PrimitiveStyle, Rectangle},
-// };
+// mod st7735_async;
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    prelude::RgbColor,
+    prelude::*,
+    primitives::{Circle, PrimitiveStyle},
+};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -25,6 +25,7 @@ use embassy_stm32::{
     spi::{self, Spi},
     time::{khz, mhz},
 };
+use embassy_time::{Duration, Timer};
 
 use fmt::error;
 
@@ -37,7 +38,7 @@ async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(config);
     //发送,接收
     let sender = config::CHANNEL.sender();
-    let receiver = config::CHANNEL.receiver();
+    let _receiver = config::CHANNEL.receiver();
     //===============================
     //配置dh11
     //===============================
@@ -49,14 +50,14 @@ async fn main(spawner: Spawner) {
     let mut spi_config = spi::Config::default();
     spi_config.frequency = mhz(15);
     // let spi = Spi::new_blocking(p.SPI1, p.PA5, p.PA7, p.PA6, spi_config);
-    let mut spi_async = Spi::new(
+    let spi_async = Spi::new(
         p.SPI1, p.PA5, p.PA7, p.PA6, p.DMA1_CH3, p.DMA1_CH2, spi_config,
     );
     // 配置控制引脚
     // CS -> PA4, DC -> PB1, RES -> PB0
-    let cs = Output::new(p.PA4, Level::Low, Speed::VeryHigh);
-    let mut dc = Output::new(p.PB1, Level::High, Speed::VeryHigh);
-    let mut rst = Output::new(p.PB0, Level::Low, Speed::VeryHigh);
+    let cs = Output::new(p.PA3, Level::Low, Speed::VeryHigh);
+    let dc = Output::new(p.PA4, Level::High, Speed::VeryHigh);
+    let rst = Output::new(p.PA2, Level::Low, Speed::VeryHigh);
     // let display = st7735::init_screen(spi, dc, rst);
     //===============================
 
@@ -84,10 +85,10 @@ async fn main(spawner: Spawner) {
             error!("Failed to spawn task: {}", e);
         }
     }
-    match spawner.spawn(st7735_async::draw_task(spi_async, dc, rst, cs, receiver)) {
+    match spawner.spawn(test_st7735_task(spi_async, dc, rst, cs)) {
         Ok(_) => (),
         Err(e) => {
-            error!("Failed to spawn draw_task: {}", e);
+            error!("Failed to spawn test_st7735_task: {}", e);
         }
     }
     match spawner.spawn(bh1750::bh1750_read(i2c_bh1750)) {
@@ -136,3 +137,32 @@ async fn main(spawner: Spawner) {
 //         Timer::after(Duration::from_secs(2)).await
 //     }
 // }
+#[embassy_executor::task]
+async fn test_st7735_task(
+    spi: Spi<'static, embassy_stm32::mode::Async>,
+    dc: Output<'static>,
+    rst: Output<'static>,
+    cs: Output<'static>,
+) {
+    let mut display = st7735::ST7735::new(spi, rst, dc, cs);
+    display.init().await;
+
+    // 1. 设置方向 ( Landscape)
+    display
+        .set_orientation(st7735::Orientation::Landscape)
+        .await;
+
+    // 2. 清屏 (蓝色背景)
+    display.clear(Rgb565::BLUE).await;
+
+    // 3. 画圆 (黄色, 居中) - Landscape 模式下通常宽160, 高128
+    // 中心点 (80, 64)
+    let line_style = PrimitiveStyle::with_stroke(Rgb565::YELLOW, 2);
+    let circle = Circle::new(Point::new(80, 64), 40).into_styled(line_style);
+
+    display.draw_pixels(circle.pixels()).await;
+
+    loop {
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
