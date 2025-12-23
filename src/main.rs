@@ -3,8 +3,9 @@
 
 mod bh1750;
 mod config;
-mod dh11;
+mod dht11;
 mod fmt;
+mod soil;
 mod st7735;
 // mod st7735_async;
 use embedded_graphics::{
@@ -76,10 +77,11 @@ async fn main(spawner: Spawner) {
     );
 
     //===============================
-
+    //配置ADC for soil sensor
+    let adc = embassy_stm32::adc::Adc::new(p.ADC1);
     //===============================
     //执行dh11任务
-    match spawner.spawn(dh11::dh11_task(dh11_pin, sender)) {
+    match spawner.spawn(dht11::dh11_task(dh11_pin, sender)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn task: {}", e);
@@ -95,6 +97,12 @@ async fn main(spawner: Spawner) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn bh1750_read task: {}", e);
+        }
+    }
+    match spawner.spawn(soil::soil(adc, p.PA0)) {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Failed to spawn soil task: {}", e);
         }
     }
     //===============================
