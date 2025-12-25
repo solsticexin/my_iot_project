@@ -79,6 +79,21 @@ async fn main(spawner: Spawner) {
     //===============================
     //配置ADC for soil sensor
     let adc = embassy_stm32::adc::Adc::new(p.ADC1);
+
+    //===============================
+
+    //===============================
+    //串口
+    let  usart1_config=embassy_stm32::usart::Config::default();
+    let uart=embassy_stm32::usart::Uart::new(
+        p.USART1,
+        p.PA10,
+        p.PA9,
+        config::Irqs,
+        p.DMA1_CH4,
+        p.DMA1_CH5,
+        usart1_config,
+    );
     //===============================
     //执行dh11任务
     match spawner.spawn(dht11::dh11_task(dh11_pin, sender)) {

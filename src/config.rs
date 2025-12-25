@@ -20,6 +20,7 @@ fn clocks_config() -> rcc::Config {
         prediv: rcc::PllPreDiv::DIV1,
         mul: rcc::PllMul::MUL9,
     });
+
     config.ahb_pre = rcc::AHBPrescaler::DIV1;
     config.apb1_pre = rcc::APBPrescaler::DIV2;
     config.apb2_pre = rcc::APBPrescaler::DIV1;
@@ -32,6 +33,7 @@ fn clocks_config() -> rcc::Config {
 bind_interrupts!(pub struct Irqs {
     I2C1_EV => embassy_stm32::i2c::EventInterruptHandler<peripherals::I2C1>;
     I2C1_ER => embassy_stm32::i2c::ErrorInterruptHandler<peripherals::I2C1>;
+    USART1  => embassy_stm32::usart::InterruptHandler<peripherals::USART1>;
 });
 
 //BH1750 常量
