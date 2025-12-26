@@ -7,6 +7,9 @@ mod dht11;
 mod fmt;
 mod soil;
 mod st7735;
+mod esp01s;
+
+use defmt::info;
 // mod st7735_async;
 use embedded_graphics::{
     pixelcolor::Rgb565,
@@ -83,17 +86,30 @@ async fn main(spawner: Spawner) {
     //===============================
 
     //===============================
-    //串口
-    let  usart1_config=embassy_stm32::usart::Config::default();
-    let uart=embassy_stm32::usart::Uart::new(
+    //串口配置
+    let mut _usart1_config=embassy_stm32::usart::Config::default();
+    _usart1_config.baudrate=115200;//设置波特率
+    _usart1_config.data_bits=embassy_stm32::usart::DataBits::DataBits8;//设置数据位为8位
+    _usart1_config.stop_bits=embassy_stm32::usart::StopBits::STOP1;//设置停止位为1位
+    _usart1_config.parity=embassy_stm32::usart::Parity::ParityNone;//设置无校验位
+    let usart=embassy_stm32::usart::Uart::new(
         p.USART1,
         p.PA10,
         p.PA9,
         config::Irqs,
         p.DMA1_CH4,
         p.DMA1_CH5,
-        usart1_config,
+        _usart1_config,
     );
+    let usart = match usart {
+        Ok(val)=>val,
+        Err(e)=>{
+            error!("Failed to create Uart: {}", e);
+            return;
+        },
+    };
+
+
     //===============================
     //执行dh11任务
     match spawner.spawn(dht11::dh11_task(dh11_pin, sender)) {
@@ -114,10 +130,16 @@ async fn main(spawner: Spawner) {
             error!("Failed to spawn bh1750_read task: {}", e);
         }
     }
-    match spawner.spawn(soil::soil(adc, p.PA0)) {
+    // match spawner.spawn(soil::soil(adc, p.PA0)) {
+    //     Ok(_) => (),
+    //     Err(e) => {
+    //         error!("Failed to spawn soil task: {}", e);
+    //     }
+    // }
+    match spawner.spawn(usart_task(usart)) {
         Ok(_) => (),
         Err(e) => {
-            error!("Failed to spawn soil task: {}", e);
+            error!("Failed to spawn usart_tack task: {}", e);
         }
     }
     //===============================
@@ -160,6 +182,18 @@ async fn main(spawner: Spawner) {
 //         Timer::after(Duration::from_secs(2)).await
 //     }
 // }
+#[embassy_executor::task]
+async fn usart_task(mut usart:embassy_stm32::usart::Uart<'static,embassy_stm32::mode::Async>){
+    loop {
+        usart.write(b"Hello, World!\r\n").await.unwrap();
+        let mut data =esp01s::DataReportFrame::new(25, 60, 30, 500, true, false, true, false);
+        let mut json = data.to_json();
+        json.push_str("\r\n");
+        usart.write(json.as_bytes()).await.unwrap();
+        info!("Sent: Hello, World!\r\n");
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
 #[embassy_executor::task]
 async fn test_st7735_task(
     spi: Spi<'static, embassy_stm32::mode::Async>,

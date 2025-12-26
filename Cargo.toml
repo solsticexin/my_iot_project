@@ -36,6 +36,9 @@ embassy-hal-internal = "0.3.0"
 lcd-async = "0.1.1"
 static_cell = "2.1.1"
 embedded-hal-bus = { version = "0.3.0", features = ["async"] }
+serde = { version = "1.0.228", default-features = false, features = ["derive"] }
+serde-json-core = "0.6.0"
+
 
 [[bin]]
 name = "my_iot_project"
