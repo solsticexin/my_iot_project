@@ -1,4 +1,3 @@
-use defmt::export::u16;
 use embassy_stm32::{
     usart,
     mode,
@@ -24,7 +23,7 @@ impl<'d> Esp01s<'d> {
 
 }
 ///esp01s通信数据帧类型
-enum FrameType  {
+pub enum FrameType  {
     ///数据上报帧
     DataReport(DataReportFrame),
     ///命令执行帧
@@ -61,13 +60,15 @@ impl DataReportFrame {
     }
 }
 #[derive(Deserialize,Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct CommandExecuteFrame {
     pub target:target,
     pub action:Action,
 }
 
 #[derive(Deserialize,Debug)]
-enum  target{
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum  target{
     Water,
     Light,
     Fan,
@@ -75,7 +76,8 @@ enum  target{
 }
 
 #[derive(Debug)]
-enum  Action{
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum  Action{
     On,
     Off,
     Pulse(u16), // 脉冲时间(ms)
@@ -98,19 +100,19 @@ impl<'de> Deserialize<'de> for Action{
                 Err(_)=>Err(D::Error::custom("Invalid pulse duration")),
             }
         }else{
-            Err(serde::de::Error::custom("Invalid Action"))
+            Err(Error::custom("Invalid Action"))
         }
     }
 
 }
 
-struct ExecutionReceiptFrame {
+pub struct ExecutionReceiptFrame {
     target:target,
     action:Action,
     result:bool,
     message:ExecutionReceiptMessage,
 }
-enum  ExecutionReceiptMessage{
+pub enum  ExecutionReceiptMessage{
     Success,
     Failed,
 }
