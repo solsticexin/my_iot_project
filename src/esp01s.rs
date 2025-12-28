@@ -3,29 +3,21 @@ use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json_core::heapless::String;
 
+///esp-01s错误类型
 pub enum Esp01sError {
     Json(serde_json_core::ser::Error),
     Uart(usart::Error),
+    FrameTypeError(crate::esp01s::FrameError),
 }
 
-pub struct Esp01s<'d> {
-    usart: usart::Uart<'d, mode::Async>,
+type FrameError = FrameTypeError;
+
+pub enum FrameTypeError {
+    NotReport,
+    NotCommand,
+    NotReceipt,
 }
-pub struct Json {
-    json: FrameType,
-}
-impl<'d> Esp01s<'d> {
-    pub fn new(usart: usart::Uart<'d, mode::Async>) -> Self {
-        Self { usart }
-    }
-    pub async fn data_report(&mut self, mut data: DataReportFrame) -> Result<(), Esp01sError> {
-        let data = data.to_json().map_err(Esp01sError::Json)?;
-        self.usart
-            .write(data.as_bytes())
-            .await
-            .map_err(Esp01sError::Uart)
-    }
-}
+
 ///esp01s通信数据帧类型
 pub enum FrameType {
     ///数据上报帧
@@ -35,6 +27,63 @@ pub enum FrameType {
     ///执行回执帧
     ExecutionReceipt(ExecutionReceiptFrame),
 }
+impl FrameType {
+    #[inline]
+    pub fn analysis_report(self) -> Result<DataReportFrame, FrameError> {
+        if let FrameType::DataReport(val) = self {
+            Ok(val)
+        } else {
+            Err(FrameError::NotReport)
+        }
+    }
+    #[inline]
+    pub fn analysis_command(self) -> Result<CommandExecuteFrame, FrameError> {
+        if let FrameType::CommandExecute(val) = self {
+            Ok(val)
+        } else {
+            Err(FrameError::NotCommand)
+        }
+    }
+    #[inline]
+    pub fn analysis_receipt(self) -> Result<ExecutionReceiptFrame, FrameError> {
+        if let FrameType::ExecutionReceipt(val) = self {
+            Ok(val)
+        } else {
+            Err(FrameError::NotReceipt)
+        }
+    }
+}
+
+pub struct Esp01s<'d> {
+    usart: usart::Uart<'d, mode::Async>,
+}
+
+impl<'d> Esp01s<'d> {
+    pub fn new(usart: usart::Uart<'d, mode::Async>) -> Self {
+        Self { usart }
+    }
+    pub async fn data_report(&mut self, data: FrameType) -> Result<(), Esp01sError> {
+        let mut frame = data
+            .analysis_report()
+            .map_err(Esp01sError::FrameTypeError)?;
+        // let mut frame = match data {
+        //     DataReport(frame) => frame,
+        //     _ => return Err(Esp01sError::FrameTypeError),
+        // };
+        let frame = frame.to_json().map_err(Esp01sError::Json)?;
+        self.usart
+            .write(frame.as_bytes())
+            .await
+            .map_err(Esp01sError::Uart)
+    }
+    pub async fn command_execute(&mut self, command: FrameType) -> Result<(), Esp01sError> {
+        let mut frame = command
+            .analysis_command()
+            .map_err(Esp01sError::FrameTypeError)?;
+        Ok(())
+    }
+}
+
 #[derive(Serialize)]
 pub struct DataReportFrame {
     temp: u8,     //温度
