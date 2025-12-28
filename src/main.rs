@@ -21,10 +21,10 @@ use {defmt_rtt as _, panic_probe as _};
 
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    gpio::{Flex, Speed},
+    gpio::{Flex, Level, Output, Speed},
     i2c::I2c,
-    spi,
-    time::khz,
+    spi::{self, Spi},
+    time::{khz, mhz},
 };
 use embassy_time::{Duration, Timer};
 
@@ -67,7 +67,7 @@ async fn main(spawner: Spawner) {
     );
 
     // ADC for Soil Sensor
-    let adc = embassy_stm32::adc::Adc::new(p.ADC1, p.DMA1_CH1);
+    let adc = embassy_stm32::adc::Adc::new(p.ADC1);
 
     // USART Configuration
     let mut _usart1_config = embassy_stm32::usart::Config::default();
