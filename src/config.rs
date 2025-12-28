@@ -1,6 +1,7 @@
 use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_sync::mutex::Mutex;
 pub fn stm_config() -> embassy_stm32::Config {
     let mut stm_config = embassy_stm32::Config::default();
     let clocks_config = clocks_config();
@@ -34,6 +35,7 @@ bind_interrupts!(pub struct Irqs {
     I2C1_EV => embassy_stm32::i2c::EventInterruptHandler<peripherals::I2C1>;
     I2C1_ER => embassy_stm32::i2c::ErrorInterruptHandler<peripherals::I2C1>;
     USART1  => embassy_stm32::usart::InterruptHandler<peripherals::USART1>;
+    ADC1_2 => embassy_stm32::adc::InterruptHandler<peripherals::ADC1>;
 });
 
 //BH1750 常量
@@ -43,3 +45,35 @@ pub const CMD_H_RES_MODE: u8 = 0x10; //连续高分辨率模式
 
 //全局静态变量
 pub static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
+
+// 传感器数据共享结构
+pub struct SensorData {
+    pub temperature: u8,      // 温度
+    pub humidity: u8,         // 湿度
+    pub soil_moisture: u16,   // 土壤湿度 (ADC原始值)
+    pub light_intensity: u16, // 光照强度 (原始值)
+}
+
+// 继电器状态结构
+pub struct RelayStates {
+    pub water: bool,
+    pub light: bool,
+    pub fan: bool,
+    pub buzzer: bool,
+}
+
+// 全局共享传感器数据
+pub static SENSOR_DATA: Mutex<CriticalSectionRawMutex, SensorData> = Mutex::new(SensorData {
+    temperature: 0,
+    humidity: 0,
+    soil_moisture: 0,
+    light_intensity: 0,
+});
+
+// 全局共享继电器状态
+pub static RELAY_STATES: Mutex<CriticalSectionRawMutex, RelayStates> = Mutex::new(RelayStates {
+    water: false,
+    light: false,
+    fan: false,
+    buzzer: false,
+});

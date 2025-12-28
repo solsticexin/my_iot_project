@@ -1,11 +1,9 @@
-use embassy_stm32::gpio::{Level, Output};
+use embassy_stm32::gpio::{Flex, Level};
 use embassy_stm32::{mode, usart};
 use embassy_time::{Duration, Timer};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json_core::heapless::String;
-
-use crate::esp01s;
 
 ///esp-01s错误类型
 pub enum Esp01sError {
@@ -62,13 +60,13 @@ pub struct Esp01s<'d> {
     pub usart: usart::Uart<'d, mode::Async>,
 }
 pub struct Relay<'d> {
-    fan: Output<'d>,
-    buzzer: Output<'d>,
-    water: Output<'d>,
-    light: Output<'d>,
+    fan: Flex<'d>,
+    buzzer: Flex<'d>,
+    water: Flex<'d>,
+    light: Flex<'d>,
 }
 impl<'d> Relay<'d> {
-    fn new(fan: Output<'d>, buzzer: Output<'d>, water: Output<'d>, light: Output<'d>) -> Self {
+    pub fn new(fan: Flex<'d>, buzzer: Flex<'d>, water: Flex<'d>, light: Flex<'d>) -> Self {
         Self {
             fan,
             buzzer,
@@ -76,7 +74,11 @@ impl<'d> Relay<'d> {
             light,
         }
     }
-    async fn execute_action(&mut self, target: Target, action: Action) -> ExecutionReceiptFrame {
+    pub async fn execute_action(
+        &mut self,
+        target: Target,
+        action: Action,
+    ) -> ExecutionReceiptFrame {
         let executed_action = match target {
             Target::Fan => action.execution(&mut self.fan).await,
             Target::Buzzer => action.execution(&mut self.buzzer).await,
@@ -95,15 +97,15 @@ impl<'d> Esp01s<'d> {
     pub fn new(usart: usart::Uart<'d, mode::Async>) -> Self {
         Self { usart }
     }
-    pub async fn data_report(&mut self, data: FrameType) -> Result<(), Esp01sError> {
-        let mut frame = data
-            .analysis_report()
-            .map_err(Esp01sError::FrameTypeError)?;
+    pub async fn data_report(&mut self, mut data: DataReportFrame) -> Result<(), Esp01sError> {
+        // let mut frame = data
+        //     .analysis_report()
+        //     .map_err(Esp01sError::FrameTypeError)?;
         // let mut frame = match data {
         //     DataReport(frame) => frame,
         //     _ => return Err(Esp01sError::FrameTypeError),
         // };
-        let frame: String<128> = frame.to_json().map_err(Esp01sError::Json)?;
+        let frame: String<128> = data.to_json().map_err(Esp01sError::Json)?;
         self.usart
             .write(frame.as_bytes())
             .await
@@ -200,7 +202,7 @@ pub enum Action {
 }
 
 impl<'d> Action {
-    pub async fn execution(&self, pin: &mut Output<'d>) -> Action {
+    pub async fn execution(&self, pin: &mut Flex<'d>) -> Action {
         match self {
             Action::On => {
                 pin.set_level(Level::High);

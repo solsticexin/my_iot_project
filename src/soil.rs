@@ -18,11 +18,22 @@ impl<'d, T: Instance, P: AdcChannel<T>> Soil<'d, T, P> {
     }
 }
 #[embassy_executor::task]
-pub async fn soil(adc: Adc<'static, ADC1>, pin: embassy_stm32::Peri<'static, PA0>) {
+pub async fn soil(mut adc: Adc<'static, ADC1>, pin: embassy_stm32::Peri<'static, PA0>) {
+    use embassy_stm32::adc::SampleTime;
+    adc.set_sample_time(SampleTime::CYCLES239_5);
+
     let mut soil = Soil::new(adc, pin);
     loop {
+        defmt::info!("Starting soil read...");
         let value = soil.read().await;
         defmt::info!("Soil moisture: {}", value);
+
+        // 更新全局共享状态
+        {
+            let mut sensor_data = crate::config::SENSOR_DATA.lock().await;
+            sensor_data.soil_moisture = value;
+        }
+
         Timer::after(Duration::from_secs(1)).await;
     }
 }
