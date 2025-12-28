@@ -1,7 +1,11 @@
+use embassy_stm32::gpio::{Level, Output};
 use embassy_stm32::{mode, usart};
+use embassy_time::{Duration, Timer};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json_core::heapless::String;
+
+use crate::esp01s;
 
 ///esp-01s错误类型
 pub enum Esp01sError {
@@ -55,9 +59,38 @@ impl FrameType {
 }
 
 pub struct Esp01s<'d> {
-    usart: usart::Uart<'d, mode::Async>,
+    pub usart: usart::Uart<'d, mode::Async>,
 }
+pub struct Relay<'d> {
+    fan: Output<'d>,
+    buzzer: Output<'d>,
+    water: Output<'d>,
+    light: Output<'d>,
+}
+impl<'d> Relay<'d> {
+    fn new(fan: Output<'d>, buzzer: Output<'d>, water: Output<'d>, light: Output<'d>) -> Self {
+        Self {
+            fan,
+            buzzer,
+            water,
+            light,
+        }
+    }
+    async fn execute_action(&mut self, target: Target, action: Action) -> ExecutionReceiptFrame {
+        let executed_action = match target {
+            Target::Fan => action.execution(&mut self.fan).await,
+            Target::Buzzer => action.execution(&mut self.buzzer).await,
+            Target::Water => action.execution(&mut self.water).await,
+            Target::Light => action.execution(&mut self.light).await,
+        };
 
+        ExecutionReceiptFrame {
+            target,
+            action: executed_action,
+            result: true,
+        }
+    }
+}
 impl<'d> Esp01s<'d> {
     pub fn new(usart: usart::Uart<'d, mode::Async>) -> Self {
         Self { usart }
@@ -70,16 +103,32 @@ impl<'d> Esp01s<'d> {
         //     DataReport(frame) => frame,
         //     _ => return Err(Esp01sError::FrameTypeError),
         // };
-        let frame = frame.to_json().map_err(Esp01sError::Json)?;
+        let frame: String<128> = frame.to_json().map_err(Esp01sError::Json)?;
         self.usart
             .write(frame.as_bytes())
             .await
             .map_err(Esp01sError::Uart)
     }
-    pub async fn command_execute(&mut self, command: FrameType) -> Result<(), Esp01sError> {
-        let mut frame = command
+    pub async fn command_execute(
+        &mut self,
+        command: FrameType,
+        relay: &mut Relay<'d>,
+    ) -> Result<ExecutionReceiptFrame, Esp01sError> {
+        let frame = command
             .analysis_command()
             .map_err(Esp01sError::FrameTypeError)?;
+        let receipt = relay.execute_action(frame.target, frame.action).await;
+        Ok(receipt)
+    }
+    pub async fn execution_receipt(&mut self, receipt: FrameType) -> Result<(), Esp01sError> {
+        let mut frame = receipt
+            .analysis_receipt()
+            .map_err(Esp01sError::FrameTypeError)?;
+        let frame: String<128> = frame.to_json().map_err(Esp01sError::Json)?;
+        self.usart
+            .write(frame.as_bytes())
+            .await
+            .map_err(Esp01sError::Uart)?;
         Ok(())
     }
 }
@@ -117,32 +166,57 @@ impl DataReportFrame {
             buzzer,
         }
     }
-    pub fn to_json(&mut self) -> serde_json_core::ser::Result<String<128>> {
+    // pub fn to_json(&mut self) -> serde_json_core::ser::Result<String<128>> {
+    //     serde_json_core::to_string(&self)
+    // }
+}
+impl Json for DataReportFrame {
+    fn to_json<const N: usize>(&mut self) -> serde_json_core::ser::Result<String<N>> {
         serde_json_core::to_string(&self)
     }
 }
 #[derive(Deserialize, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct CommandExecuteFrame {
-    pub target: target,
+    pub target: Target,
     pub action: Action,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum target {
+pub enum Target {
     Water,
     Light,
     Fan,
     Buzzer,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Action {
     On,
     Off,
-    Pulse(u16), // 脉冲时间(ms)
+    Duration(u64), // 持续时间，按秒计算。
+}
+
+impl<'d> Action {
+    pub async fn execution(&self, pin: &mut Output<'d>) -> Action {
+        match self {
+            Action::On => {
+                pin.set_level(Level::High);
+                Action::On
+            }
+            Action::Off => {
+                pin.set_level(Level::Low);
+                Action::Off
+            }
+            Action::Duration(val) => {
+                pin.set_level(Level::High);
+                Timer::after(Duration::from_secs(*val)).await;
+                Action::Duration(*val)
+            }
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Action {
@@ -157,8 +231,8 @@ impl<'de> Deserialize<'de> for Action {
             Ok(Action::Off)
         } else if s.starts_with("Pulse(") && s.ends_with(')') {
             let duration_str = &s[6..s.len() - 1];
-            match duration_str.parse::<u16>() {
-                Ok(duration) => Ok(Action::Pulse(duration)),
+            match duration_str.parse::<u64>() {
+                Ok(duration) => Ok(Action::Duration(duration)),
                 Err(_) => Err(D::Error::custom("Invalid pulse duration")),
             }
         } else {
@@ -167,13 +241,26 @@ impl<'de> Deserialize<'de> for Action {
     }
 }
 
+#[derive(Serialize)]
 pub struct ExecutionReceiptFrame {
-    target: target,
-    action: Action,
-    result: bool,
-    message: ExecutionReceiptMessage,
+    pub target: Target,
+    pub action: Action,
+    pub result: bool,
+    //message: ExecutionReceiptMessage,
 }
-pub enum ExecutionReceiptMessage {
-    Success,
-    Failed,
+
+impl Json for ExecutionReceiptFrame {
+    fn to_json<const N: usize>(&mut self) -> serde_json_core::ser::Result<String<N>> {
+        serde_json_core::to_string(&self)
+    }
+}
+
+// #[derive(Serialize)]
+// pub enum ExecutionReceiptMessage {
+//     Success,
+//     Failed,
+// }
+
+pub trait Json {
+    fn to_json<const N: usize>(&mut self) -> serde_json_core::ser::Result<String<N>>;
 }

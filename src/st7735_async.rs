@@ -120,3 +120,41 @@
 //         Timer::after(Duration::from_secs(1)).await;
 //     }
 // }
+
+//===============================
+//draw任务
+//===============================
+// #[embassy_executor::task]
+// async fn draw_task(
+//     mut display: st7735::St7735Display,
+//     receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, [u8; 5], 2>,
+// ) {
+//     loop {
+//         let data = receiver.receive().await;
+//         let hum_int = data[0];
+//         let temp_int = data[2];
+
+//         // --- 可视化显示 (画条形图) ---
+
+//         // 1. 清除旧的图形 (用黑色矩形覆盖)
+//         Rectangle::new(Point::new(10, 20), Size::new(100, 60))
+//             .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
+//             .draw(&mut display)
+//             .unwrap();
+
+//         // 2. 画温度条 (红色) - 长度根据温度值变化
+//         let temp_len = (temp_int as u32).min(100) * 2; // 放大一点便于观察
+//         Rectangle::new(Point::new(10, 30), Size::new(temp_len, 10))
+//             .into_styled(PrimitiveStyle::with_fill(Rgb565::RED))
+//             .draw(&mut display)
+//             .unwrap();
+
+//         // 3. 画湿度条 (青色)
+//         let hum_len = (hum_int as u32).min(100);
+//         Rectangle::new(Point::new(10, 50), Size::new(hum_len, 10))
+//             .into_styled(PrimitiveStyle::with_fill(Rgb565::CYAN))
+//             .draw(&mut display)
+//             .unwrap();
+//         Timer::after(Duration::from_secs(2)).await
+//     }
+// }
