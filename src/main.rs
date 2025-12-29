@@ -5,29 +5,27 @@ mod bh1750;
 mod config;
 mod dht11;
 mod esp01s;
-mod esp01s_task;
 mod fmt;
 mod soil;
-mod st7735;
-mod st7735_display_task;
 
-use crate::esp01s::Json;
-use defmt::{error, info};
+use defmt::{error, info, warn};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
+use config::SHARED_TX;
 use embassy_executor::Spawner;
 use embassy_stm32::{
     gpio::{Flex, Level, Output, Speed},
     i2c::I2c,
+    mode,
     spi::{self, Spi},
     time::{khz, mhz},
+    usart,
 };
 use embassy_time::{Duration, Timer};
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     // Initialization
@@ -84,7 +82,7 @@ async fn main(spawner: Spawner) {
         p.DMA1_CH5,
         _usart1_config,
     );
-    let usart = match usart {
+    let mut usart = match usart {
         Ok(val) => val,
         Err(e) => {
             error!("Failed to create Uart: {}", e);
@@ -92,26 +90,10 @@ async fn main(spawner: Spawner) {
         }
     };
 
-    // Relay Pins Configuration
-    let mut relay_water = Flex::new(p.PB12);
-    relay_water.set_as_output(Speed::Low);
-    relay_water.set_low();
-
-    let mut relay_light = Flex::new(p.PB13);
-    relay_light.set_as_output(Speed::Low);
-    relay_light.set_low();
-
-    let mut relay_fan = Flex::new(p.PB14);
-    relay_fan.set_as_output(Speed::Low);
-    relay_fan.set_low();
-
-    let mut relay_buzzer = Flex::new(p.PB15);
-    relay_buzzer.set_as_output(Speed::Low);
-    relay_buzzer.set_low();
-
-    // Relay Instance
-    let relay = esp01s::Relay::new(relay_fan, relay_buzzer, relay_water, relay_light);
-
+    usart.write(b"hello world\r\n").await.unwrap();
+    let (tx, rx) = usart.split();
+    // 设置共享TX端和RX端
+    *SHARED_TX.lock().await = Some(tx);
     // Spawn DHT11 Task
     match spawner.spawn(dht11::dh11_task(dh11_pin, sender)) {
         Ok(_) => (),
@@ -136,25 +118,81 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    // Spawn ESP01s Hybrid Task
-    match spawner.spawn(esp01s_task::hybrid(usart, relay)) {
-        Ok(_) => {
-            info!("ESP01s hybrid task started");
-        }
-        Err(e) => {
-            error!("Failed to spawn hybrid task: {}", e);
-        }
+    // Spawn Test Task 1 (Send Serial Data)
+    match spawner.spawn(test_task1()) {
+        Ok(_) => info!("Spawned test_task1"),
+        Err(e) => error!("Failed to spawn test_task1: {}", e),
     }
 
-    // ST7735 Display Task (Disabled)
-    /*
-    match spawner.spawn(st7735_display_task::display_task(display)) {
-        Ok(_) => {
-            info!("ST7735 display task started");
+    // Spawn Test Task 2 (Receive and Echo Serial Data)
+    match spawner.spawn(test_task2(rx)) {
+        Ok(_) => info!("Spawned test_task2"),
+        Err(e) => error!("Failed to spawn test_task2: {}", e),
+    }
+}
+#[embassy_executor::task]
+async fn test_task1() {
+    loop {
+        let mut tx_g = SHARED_TX.lock().await;
+        let tx = match tx_g.as_mut() {
+            Some(tx) => tx,
+            None => {
+                warn!("task1 TX失败");
+                continue;
+            }
+        };
+        match tx.write(b"hello wolrd\r\n").await {
+            Ok(_) => (),
+            Err(e) => warn!("{}", e),
         }
-        Err(e) => {
-            error!("Failed to spawn display task: {}", e);
+        drop(tx_g);
+        // 等待1秒
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+#[embassy_executor::task]
+async fn test_task2(mut rx: usart::UartRx<'static, mode::Async>) {
+    let mut buffer = [0u8; 128];
+    loop {
+        // 使用embassy_time::with_timeout实现1秒超时
+        let len = match embassy_time::with_timeout(
+            Duration::from_secs(1),
+            rx.read_until_idle(&mut buffer),
+        )
+        .await
+        {
+            Ok(Ok(val)) => {
+                info!("task2 串口接收成功");
+                val
+            } // 成功读取到数据
+            Ok(Err(e)) => {
+                // 读取操作本身失败
+                warn!("rx读取长度失败{}", e);
+                continue;
+            }
+            Err(_) => {
+                // 超时错误
+                warn!("task2 串口接收超时");
+                continue;
+            }
+        };
+        if len > 0 {
+            let mut tx_g = SHARED_TX.lock().await;
+            let tx = match tx_g.as_mut() {
+                Some(val) => val,
+                None => {
+                    warn!("task2 TX失败");
+                    continue;
+                }
+            };
+            match tx.write(&mut buffer[..len]).await {
+                Ok(_) => (),
+                Err(e) => {
+                    warn!("{}", e);
+                    continue;
+                }
+            }
+            drop(tx_g);
         }
     }
-    */
 }

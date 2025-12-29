@@ -1,4 +1,5 @@
-use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz};
+use embassy_stm32::mode::Async;
+use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz, usart::UartTx};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::mutex::Mutex;
@@ -46,34 +47,6 @@ pub const CMD_H_RES_MODE: u8 = 0x10; //连续高分辨率模式
 //全局静态变量
 pub static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
 
-// 传感器数据共享结构
-pub struct SensorData {
-    pub temperature: u8,      // 温度
-    pub humidity: u8,         // 湿度
-    pub soil_moisture: u16,   // 土壤湿度 (ADC原始值)
-    pub light_intensity: u16, // 光照强度 (原始值)
-}
-
-// 继电器状态结构
-pub struct RelayStates {
-    pub water: bool,
-    pub light: bool,
-    pub fan: bool,
-    pub buzzer: bool,
-}
-
-// 全局共享传感器数据
-pub static SENSOR_DATA: Mutex<CriticalSectionRawMutex, SensorData> = Mutex::new(SensorData {
-    temperature: 0,
-    humidity: 0,
-    soil_moisture: 0,
-    light_intensity: 0,
-});
-
-// 全局共享继电器状态
-pub static RELAY_STATES: Mutex<CriticalSectionRawMutex, RelayStates> = Mutex::new(RelayStates {
-    water: false,
-    light: false,
-    fan: false,
-    buzzer: false,
-});
+//pub type SharedTx<'d> = Mutex<CriticalSectionRawMutex, UartTx<'d, Async>>;
+pub static SHARED_TX: Mutex<CriticalSectionRawMutex, Option<UartTx<'static, Async>>> =
+    Mutex::new(None);

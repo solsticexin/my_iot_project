@@ -47,12 +47,6 @@ pub async fn bh1750_read(mut i2c: I2cDriver) {
                 // 高分辨率模式下，lux = raw_data / 1.2
                 let lux: f32 = (raw_data as f32) / 1.2;
                 defmt::info!("光照强度 {} lux，原始数据 {}", lux, raw_data);
-
-                // 更新全局共享状态
-                {
-                    let mut sensor_data = crate::config::SENSOR_DATA.lock().await;
-                    sensor_data.light_intensity = raw_data;
-                }
             }
             Err(e) => defmt::info!("读取数据失败：{:?}", e),
         }

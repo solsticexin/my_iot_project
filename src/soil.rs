@@ -27,13 +27,6 @@ pub async fn soil(mut adc: Adc<'static, ADC1>, pin: embassy_stm32::Peri<'static,
         defmt::info!("Starting soil read...");
         let value = soil.read().await;
         defmt::info!("Soil moisture: {}", value);
-
-        // 更新全局共享状态
-        {
-            let mut sensor_data = crate::config::SENSOR_DATA.lock().await;
-            sensor_data.soil_moisture = value;
-        }
-
         Timer::after(Duration::from_secs(1)).await;
     }
 }

@@ -50,16 +50,6 @@ pub async fn dh11_task(
             Ok(data) => {
                 // 数据读取成功，记录日志
                 info!("dh11_read: {},{},{},{}", data[0], data[1], data[2], data[3]);
-
-                // 更新全局共享状态
-                {
-                    let mut sensor_data = crate::config::SENSOR_DATA.lock().await;
-                    sensor_data.humidity = data[0];
-                    sensor_data.temperature = data[2];
-                }
-
-                // 保留原有的channel发送
-                sender.send(data).await;
             }
             Err(e) => {
                 // 数据读取失败，记录错误
