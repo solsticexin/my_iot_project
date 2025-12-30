@@ -1,243 +1,57 @@
-# 嵌入式自动化节点 API 文档（Embassy + UART + TLV）
-
-本 API 文档总结了系统的**整体架构、任务职责、串口协议、事件模型与数据流**。目标是构建一个**可靠、可扩展、可调试**的嵌入式自动化控制节点。
-
----
-
-## 1. 系统概览
-
-系统由 MCU（Embassy 异步运行时）与 ESP-01S 通过 UART 通信组成。
-
-功能包括：
-- 采集三类传感器数据
-  - 土壤湿度
-  - 环境温度 / 湿度
-  - 光照强度
-- 控制四类执行器
-  - 风扇（继电器，高电平触发）
-  - 水泵（继电器，高电平触发）
-  - 补光灯（继电器，高电平触发）
-  - 蜂鸣器（低电平触发）
-- 支持执行器的**即时控制**与**定时 Pulse 控制**
-- 所有状态与数据通过统一 UART 帧协议上传
-
----
-
-## 2. 设计核心思想
-
-### 2.1 逻辑分层
-
-- **系统内部（职责明确）**
-  - 传感器：观察世界（时间驱动）
-  - 执行器：改变世界（事件驱动）
-- **通信层（统一出口）**
-  - UART 只负责“搬运消息”，不关心业务含义
-
-### 2.2 事件模型
-
-- 传感器数据：周期性上报（可覆盖、可丢帧）
-- 执行器状态：事件触发上报（状态变化即上报）
-- 串口不是调度者，只是通道
-
----
-
-## 3. 任务（Task）划分
-
-### 3.1 uart_rx_task
-
-**职责**：
-- 从 UART 接收字节流
-- 进行帧同步（SOF）
-- 校验 LEN / CRC
-- 解析 TYPE + PAYLOAD
-- 将解析后的命令发送至 command_task
-
-**特性**：
-- RX only
-- 不关心业务含义
-
----
-
-### 3.2 uart_tx_task
-
-**职责**：
-- 从 tx_channel 接收待发送消息
-- 按帧格式编码
-- 顺序发送到 UART
-
-**特性**：
-- TX only
-- 严格顺序保证
-- 系统唯一 UART 发送出口
-
----
-
-### 3.3 command_task
-
-**职责**：
-- 接收来自 uart_rx_task 的 Command
-- 校验参数合法性
-- 转发给 actuator_task 执行
-- 生成 CommandAck（成功 / 失败）
-
-**特性**：
-- 不直接操作 GPIO
-- 不处理定时
-
----
-
-### 3.4 sensor_task_x（多个）
-
-**职责**：
-- 周期性采集对应传感器
-- 生成 SensorReport
-- 发送到 tx_channel
-
-**特性**：
-- 时间驱动
-- 周期固定
-- 数据可合并、可限流
-
----
-
-### 3.5 actuator_task（逻辑存在）
-
-**职责**：
-- 接收执行器控制命令
-- 操作 GPIO（内部处理高/低电平差异）
-- 管理 Pulse 定时
-- 在状态变化时生成 ActuatorStatus 上报
-
-**触发上报的时机**：
-- 命令执行完成
-- Pulse 结束
-- 系统启动初始化完成
-
----
-
-## 4. 串口帧格式（TLV 风格）
-
-```
-+--------+--------+--------+----------+--------+
-|  SOF   |  LEN   |  TYPE  | PAYLOAD  |  CRC   |
-+--------+--------+--------+----------+--------+
-1 byte   1 byte   1 byte   N bytes    1 byte
-```
-
-- **SOF**：帧起始标志（固定值）
-- **LEN**：TYPE + PAYLOAD 长度
-- **TYPE**：帧语义类型
-- **PAYLOAD**：TLV 编码数据
-- **CRC**：简单校验（CRC8 或 XOR）
-
----
-
-## 5. TYPE 定义（语义多路复用）
-
-```
-0x01  SensorReport
-0x02  ActuatorStatus
-0x10  Command
-0x11  CommandAck
-0x20  Heartbeat / SystemStatus（可选）
-```
-
-TYPE 表示“这帧在做什么”，而不是“来自哪个模块”。
-
----
-
-## 6. Payload：TLV 结构
-
-```
-+------+--------+---------+
-| TAG  | LENGTH |  VALUE  |
-+------+--------+---------+
-```
-
-### 6.1 传感器 TAG
-
-```
-0x01  SoilMoisture   (u16)
-0x02  Temperature    (i16, 0.01°C)
-0x03  Humidity       (u16, 0.01%)
-0x04  LightIntensity (u16)
-```
-
-SensorReport 中可只包含“本次存在的数据”。
-
----
-
-### 6.2 执行器 TAG
-
-```
-0x10  Fan
-0x11  Pump
-0x12  Light
-0x13  Buzzer
-```
-
-VALUE：
-- `0x00` = OFF
-- `0x01` = ON
-
----
-
-### 6.3 Command Payload
-
-```
-[TAG][1][state]
-[TAG][2][duration_ms]
-```
-
-- state = 0x00 / 0x01
-- duration_ms 用于 Pulse 控制
-
----
-
-## 7. 上报策略总结
-
-### 7.1 传感器
-
-- 周期性上报（Timer 驱动）
-- 不关心命令
-- 可合并多个传感器到一个帧
-
-### 7.2 执行器
-
-- 仅在状态变化时上报
-- 不周期发送
-- 事件驱动（命令 / Pulse / 初始化）
-
----
-
-## 8. 数据流全景图（逻辑）
-
-```
-sensor_task_x ─┐
-               ├─> tx_channel ─> uart_tx_task ─> UART
-actuator_task ─┘
-
-UART ─> uart_rx_task ─> command_task ─> actuator_task
-```
-
----
-
-## 9. 设计原则总结
-
-- 串口是通道，不是调度器
-- TYPE 是语义，不是模块
-- 传感器 = 时间驱动
-- 执行器 = 事件驱动
-- 谁最接近事实，谁负责上报
-
----
-
-## 10. 工程目标
-
-该 API 设计目标是：
-- 清晰的因果关系
-- 易于扩展新设备
-- 丢帧可恢复
-- 抓串口可读、可调试
-
-这不是“数据传输协议”，而是一个**消息驱动的控制系统接口**。
+# UART 通信子系统 API 文档
+
+本文档仅描述嵌入式端 Rust 代码中的 API 结构与模块职责。完整的通信协议细节（帧格式、命令字等）请参考 `通信协议_v1.0.md`。
+
+## 1. 模块概览
+
+UART 子系统负责处理与上位机（如 ESP-01S 或 PC）的串行通信。采用异步任务模型，基于 `embassy-stm32` 和 `embassy-sync` 实现。
+
+**核心文件**:
+*   `src/protocol.rs`: 定义消息类型、数据结构、TLV 格式。
+*   `src/uart.rs`: 实现 UART 驱动任务 (RX/TX frame 编解码)。
+*   `src/command.rs`: 实现命令分发与执行器控制逻辑。
+
+## 2. 核心数据结构 (`src/protocol.rs`)
+
+### 2.1 消息类型 (`MessageType`)
+| 枚举值 | ID | 说明 |
+| :--- | :--- | :--- |
+| `SensorReport` | `0x01` | 传感器周期上报 |
+| `ActuatorStatus`| `0x02` | 执行器状态反馈 |
+| `Command` | `0x10` | 控制命令（下行） |
+| `CommandAck` | `0x11` | 命令收到确认（ACK） |
+| `Heartbeat` | `0x20` | 心跳包 |
+
+### 2.2 标签定义 (`Tag`)
+**SensorTag**:
+*   `SoilMoisture (0x01)`: u16 (ADC Value)
+*   `Temperature (0x02)`: i16 (0.01°C)
+*   `Humidity (0x03)`: u16 (0.01%)
+*   `LightIntensity (0x04)`: u16 (Lux)
+
+**ActuatorTag**:
+*   `Fan (0x10)`: 风扇
+*   `Pump (0x11)`: 水泵
+*   `Light (0x12)`: 补光灯
+*   `Buzzer (0x13)`: 蜂鸣器
+
+## 3. 任务接口 (`src/uart.rs`)
+
+### 3.1 `uart_rx_task`
+*   **功能**: 读取 UART RX DMA 缓冲区，自动断帧并解析。
+*   **逻辑**: 识别 SOF (`0xAA`) -> 解析 LEN -> 校验 CRC -> 提取 Payload。
+*   **输出**: 若收到 `Command` 帧，解析为 `ControlCommand` 并发送至 `COMMAND_CHANNEL`。
+
+### 3.2 `uart_tx_task`
+*   **功能**: 接收发送请求，编码为二进制帧并写入 UART TX DMA。
+*   **输入**: 监听 `UART_TX_CHANNEL`。
+*   **支持消息**: `TxMessage::Sensor`, `TxMessage::Actuator`, `TxMessage::Ack`.
+
+## 4. 命令系统 (`src/command.rs`)
+
+### 4.1 `endpoint`
+*   **通道**: `COMMAND_CHANNEL` (接收上位机指令), `uart_tx_channel` (发送 ACK/Feedback).
+
+### 4.2 控制逻辑
+*   **状态控制**: `Command Payload` 包含 `State` (ON/OFF) 和 `Duration`。
+*   **脉冲模式**: 若 `Duration > 0`，则开启指定毫秒后自动关闭，并再次上报 OFF 状态。
