@@ -35,6 +35,8 @@ pub async fn dh11_task(
     // Removed specific sender, use global UART_TX_CHANNEL
 ) {
     let tx_sender = crate::config::UART_TX_CHANNEL.sender();
+    let ui_sender = crate::config::UI_CHANNEL.sender();
+
     loop {
         // 唤醒DHT11传感器
         wake_up_sensor(&mut pin).await;
@@ -58,14 +60,16 @@ pub async fn dh11_task(
                 let report_hum = crate::protocol::TxMessage::Sensor(
                     crate::protocol::SensorData::Humidity(humidity),
                 );
-                tx_sender.send(report_hum).await;
+                tx_sender.send(report_hum.clone()).await;
+                let _ = ui_sender.try_send(report_hum);
 
                 // 上报温度 (data[2].data[3]) 0.01C -> i16
                 let temp = (data[2] as i16) * 100 + (data[3] as i16);
                 let report_temp = crate::protocol::TxMessage::Sensor(
                     crate::protocol::SensorData::Temperature(temp),
                 );
-                tx_sender.send(report_temp).await;
+                tx_sender.send(report_temp.clone()).await;
+                let _ = ui_sender.try_send(report_temp);
             }
             Err(e) => {
                 // 数据读取失败，记录错误

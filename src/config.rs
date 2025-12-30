@@ -1,9 +1,7 @@
 use crate::protocol::{ControlCommand, TxMessage};
-use embassy_stm32::mode::Async;
-use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz, usart::UartTx};
+use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_sync::mutex::Mutex;
 pub fn stm_config() -> embassy_stm32::Config {
     let mut stm_config = embassy_stm32::Config::default();
     let clocks_config = clocks_config();
@@ -49,8 +47,7 @@ pub const CMD_H_RES_MODE: u8 = 0x10; //连续高分辨率模式
 pub static CHANNEL_DHT11: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
 
 //pub type SharedTx<'d> = Mutex<CriticalSectionRawMutex, UartTx<'d, Async>>;
-pub static SHARED_TX: Mutex<CriticalSectionRawMutex, Option<UartTx<'static, Async>>> =
-    Mutex::new(None);
 
 pub static UART_TX_CHANNEL: Channel<CriticalSectionRawMutex, TxMessage, 8> = Channel::new();
+pub static UI_CHANNEL: Channel<CriticalSectionRawMutex, TxMessage, 16> = Channel::new();
 pub static COMMAND_CHANNEL: Channel<CriticalSectionRawMutex, ControlCommand, 4> = Channel::new();

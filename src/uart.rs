@@ -1,4 +1,4 @@
-use crate::config::{SHARED_TX, UART_TX_CHANNEL};
+use crate::config::UART_TX_CHANNEL;
 use crate::protocol::{ActuatorTag, MessageType, SOF, SensorData, SensorTag, TxMessage};
 use embassy_executor::task;
 use embassy_stm32::{mode::Async, usart::UartRx};
@@ -65,7 +65,7 @@ fn calculate_crc(data: &[u8]) -> u8 {
 }
 
 #[task]
-pub async fn uart_tx_task() {
+pub async fn uart_tx_task(mut tx: embassy_stm32::usart::UartTx<'static, Async>) {
     let receiver = UART_TX_CHANNEL.receiver();
     loop {
         let msg = receiver.receive().await;
@@ -75,12 +75,9 @@ pub async fn uart_tx_task() {
         let len = encode_msg(&msg, &mut buffer);
 
         if len > 0 {
-            let mut tx_lock = SHARED_TX.lock().await;
-            if let Some(tx) = tx_lock.as_mut() {
-                // 发送
-                if let Err(e) = tx.write(&buffer[..len]).await {
-                    crate::fmt::warn!("UART TX Error: {}", e);
-                }
+            // 发送
+            if let Err(e) = tx.write(&buffer[..len]).await {
+                crate::fmt::warn!("UART TX Error: {}", e);
             }
         }
     }

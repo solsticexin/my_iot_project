@@ -63,6 +63,7 @@ pub async fn actuator_task(
     flex.set_level(initial_level);
 
     let tx_sender = UART_TX_CHANNEL.sender();
+    let ui_sender = crate::config::UI_CHANNEL.sender();
 
     loop {
         let cmd = receiver.receive().await;
@@ -81,7 +82,9 @@ pub async fn actuator_task(
             actuator: cmd.actuator,
             state: cmd.state,
         };
-        tx_sender.send(TxMessage::Actuator(feedback)).await;
+        let msg = TxMessage::Actuator(feedback);
+        tx_sender.send(msg.clone()).await;
+        let _ = ui_sender.try_send(msg);
 
         // 处理 Pulse
         // 如果 state = true 且 duration > 0
@@ -98,7 +101,9 @@ pub async fn actuator_task(
                 actuator: cmd.actuator,
                 state: false,
             };
-            tx_sender.send(TxMessage::Actuator(feedback_off)).await;
+            let msg_off = TxMessage::Actuator(feedback_off);
+            tx_sender.send(msg_off.clone()).await;
+            let _ = ui_sender.try_send(msg_off);
         }
     }
 }

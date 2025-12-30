@@ -4,6 +4,7 @@
 mod bh1750;
 mod command;
 mod config;
+mod device_ui;
 mod dht11;
 mod fmt;
 mod protocol;
@@ -17,12 +18,12 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 
-use config::SHARED_TX;
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    gpio::{Flex, Speed},
+    gpio::{Flex, Level, Output, Speed},
     i2c::I2c,
-    time::khz,
+    spi::{self, Spi},
+    time::{khz, mhz},
 };
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -35,8 +36,7 @@ async fn main(spawner: Spawner) {
     let mut dh11_pin = Flex::new(p.PA1);
     dh11_pin.set_as_input_output(Speed::VeryHigh);
 
-    // ST7735 Configuration (Disabled)
-    /*
+    // ST7735 Configuration
     let mut spi_config = spi::Config::default();
     spi_config.frequency = mhz(15);
     let spi_async = Spi::new(
@@ -45,8 +45,10 @@ async fn main(spawner: Spawner) {
     let cs = Output::new(p.PA3, Level::Low, Speed::VeryHigh);
     let dc = Output::new(p.PA4, Level::High, Speed::VeryHigh);
     let rst = Output::new(p.PA2, Level::Low, Speed::VeryHigh);
-    let display = st7735::ST7735::new(spi_async, rst, dc, cs);
-    */
+
+    spawner
+        .spawn(device_ui::ui_task(spi_async, cs, dc, rst))
+        .unwrap();
 
     // I2C BH1750 Configuration
     let mut i2c_config = embassy_stm32::i2c::Config::default();
@@ -95,12 +97,12 @@ async fn main(spawner: Spawner) {
 
     usart.write(b"System Init...\r\n").await.unwrap();
     let (tx, rx) = usart.split();
-    // 设置共享TX端
-    *SHARED_TX.lock().await = Some(tx);
+    // 设置共享TX端 (已移除)
+    // *SHARED_TX.lock().await = Some(tx);
 
     // Spawn UART Tasks
     spawner.spawn(uart::uart_rx_task(rx)).unwrap();
-    spawner.spawn(uart::uart_tx_task()).unwrap();
+    spawner.spawn(uart::uart_tx_task(tx)).unwrap();
 
     // Fan (High Trigger) - PB14
     spawner

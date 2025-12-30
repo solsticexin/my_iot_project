@@ -1,37 +1,32 @@
 use defmt;
 use embassy_stm32::{
-    adc::{Adc, AdcChannel, Instance},
+    adc::Adc,
     peripherals::{ADC1, PA0},
 };
 use embassy_time::{Duration, Timer};
 
-pub struct Soil<'d, T: Instance, P: AdcChannel<T>> {
-    adc: Adc<'d, T>,
-    pin: P,
-}
-impl<'d, T: Instance, P: AdcChannel<T>> Soil<'d, T, P> {
-    pub fn new(adc: Adc<'d, T>, pin: P) -> Self {
-        Self { adc, pin }
-    }
-    pub async fn read(&mut self) -> u16 {
-        self.adc.read(&mut self.pin).await
-    }
-}
 #[embassy_executor::task]
-pub async fn soil(mut adc: Adc<'static, ADC1>, pin: embassy_stm32::Peri<'static, PA0>) {
+pub async fn soil(mut adc: Adc<'static, ADC1>, mut pin: embassy_stm32::Peri<'static, PA0>) {
     use embassy_stm32::adc::SampleTime;
     let tx_sender = crate::config::UART_TX_CHANNEL.sender();
     adc.set_sample_time(SampleTime::CYCLES239_5);
 
-    let mut soil = Soil::new(adc, pin);
+    let ui_sender = crate::config::UI_CHANNEL.sender();
+
     loop {
         defmt::info!("Starting soil read...");
-        let value = soil.read().await;
-        defmt::info!("Soil moisture: {}", value);
+        let mut v = adc.read(&mut pin).await;
 
+        // 翻转值, 越湿越小（0-4095） -> 越湿越大
+        v = 4095 - v;
+
+        defmt::info!("Soil moisture: {}", v);
+
+        // API 定义 SoilMoisture 为 u16
         let report =
-            crate::protocol::TxMessage::Sensor(crate::protocol::SensorData::SoilMoisture(value));
-        tx_sender.send(report).await;
+            crate::protocol::TxMessage::Sensor(crate::protocol::SensorData::SoilMoisture(v));
+        tx_sender.send(report.clone()).await;
+        let _ = ui_sender.try_send(report);
 
         Timer::after(Duration::from_secs(1)).await;
     }

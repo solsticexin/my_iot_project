@@ -12,6 +12,7 @@ pub type I2cDriver = I2c<'static, Async, Master>;
 #[embassy_executor::task]
 pub async fn bh1750_read(mut i2c: I2cDriver) {
     let tx_sender = crate::config::UART_TX_CHANNEL.sender();
+    let ui_sender = crate::config::UI_CHANNEL.sender();
     defmt::info!("BH1750 任务已启动");
 
     // 初始化传感器：首先向设备发送通电命令
@@ -56,7 +57,8 @@ pub async fn bh1750_read(mut i2c: I2cDriver) {
                 let report = crate::protocol::TxMessage::Sensor(
                     crate::protocol::SensorData::LightIntensity(lux_u16),
                 );
-                tx_sender.send(report).await;
+                tx_sender.send(report.clone()).await;
+                let _ = ui_sender.try_send(report);
             }
             Err(e) => defmt::info!("读取数据失败：{:?}", e),
         }
