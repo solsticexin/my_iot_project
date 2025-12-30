@@ -2,13 +2,15 @@
 #![no_main]
 
 mod bh1750;
+mod command;
 mod config;
 mod dht11;
-mod esp01s;
 mod fmt;
+mod protocol;
 mod soil;
+mod uart;
 
-use defmt::{error, info, warn};
+use defmt::{error, info};
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 
@@ -18,21 +20,16 @@ use {defmt_rtt as _, panic_probe as _};
 use config::SHARED_TX;
 use embassy_executor::Spawner;
 use embassy_stm32::{
-    gpio::{Flex, Level, Output, Speed},
+    gpio::{Flex, Speed},
     i2c::I2c,
-    mode,
-    spi::{self, Spi},
-    time::{khz, mhz},
-    usart,
+    time::khz,
 };
-use embassy_time::{Duration, Timer};
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     // Initialization
     let config = config::stm_config();
     let p = embassy_stm32::init(config);
-    let sender = config::CHANNEL.sender();
-    let _receiver = config::CHANNEL.receiver();
+    let _receiver = config::CHANNEL_DHT11.receiver();
 
     // DHT11 Configuration (PA1)
     let mut dh11_pin = Flex::new(p.PA1);
@@ -90,12 +87,66 @@ async fn main(spawner: Spawner) {
         }
     };
 
-    usart.write(b"hello world\r\n").await.unwrap();
+    // Channels for Actuators
+    static FAN_CHANNEL: command::ActuatorChannel = command::ActuatorChannel::new();
+    static PUMP_CHANNEL: command::ActuatorChannel = command::ActuatorChannel::new();
+    static LIGHT_CHANNEL: command::ActuatorChannel = command::ActuatorChannel::new();
+    static BUZZER_CHANNEL: command::ActuatorChannel = command::ActuatorChannel::new();
+
+    usart.write(b"System Init...\r\n").await.unwrap();
     let (tx, rx) = usart.split();
-    // 设置共享TX端和RX端
+    // 设置共享TX端
     *SHARED_TX.lock().await = Some(tx);
+
+    // Spawn UART Tasks
+    spawner.spawn(uart::uart_rx_task(rx)).unwrap();
+    spawner.spawn(uart::uart_tx_task()).unwrap();
+
+    // Fan (High Trigger) - PB14
+    spawner
+        .spawn(command::actuator_task(
+            Flex::new(p.PB14),
+            FAN_CHANNEL.receiver(),
+            true,
+        ))
+        .unwrap();
+    // Pump (High Trigger) - PB12
+    spawner
+        .spawn(command::actuator_task(
+            Flex::new(p.PB12),
+            PUMP_CHANNEL.receiver(),
+            true,
+        ))
+        .unwrap();
+    // Light (High Trigger) - PB13
+    spawner
+        .spawn(command::actuator_task(
+            Flex::new(p.PB13),
+            LIGHT_CHANNEL.receiver(),
+            true,
+        ))
+        .unwrap();
+    // Buzzer (Low Trigger) - PB15
+    spawner
+        .spawn(command::actuator_task(
+            Flex::new(p.PB15),
+            BUZZER_CHANNEL.receiver(),
+            false,
+        ))
+        .unwrap();
+
+    // Command Dispatch Task
+    spawner
+        .spawn(command::command_task(
+            FAN_CHANNEL.sender(),
+            PUMP_CHANNEL.sender(),
+            LIGHT_CHANNEL.sender(),
+            BUZZER_CHANNEL.sender(),
+        ))
+        .unwrap();
+
     // Spawn DHT11 Task
-    match spawner.spawn(dht11::dh11_task(dh11_pin, sender)) {
+    match spawner.spawn(dht11::dh11_task(dh11_pin)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn task: {}", e);
@@ -118,81 +169,5 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    // Spawn Test Task 1 (Send Serial Data)
-    match spawner.spawn(test_task1()) {
-        Ok(_) => info!("Spawned test_task1"),
-        Err(e) => error!("Failed to spawn test_task1: {}", e),
-    }
-
-    // Spawn Test Task 2 (Receive and Echo Serial Data)
-    match spawner.spawn(test_task2(rx)) {
-        Ok(_) => info!("Spawned test_task2"),
-        Err(e) => error!("Failed to spawn test_task2: {}", e),
-    }
-}
-#[embassy_executor::task]
-async fn test_task1() {
-    loop {
-        let mut tx_g = SHARED_TX.lock().await;
-        let tx = match tx_g.as_mut() {
-            Some(tx) => tx,
-            None => {
-                warn!("task1 TX失败");
-                continue;
-            }
-        };
-        match tx.write(b"hello wolrd\r\n").await {
-            Ok(_) => (),
-            Err(e) => warn!("{}", e),
-        }
-        drop(tx_g);
-        // 等待1秒
-        Timer::after(Duration::from_secs(1)).await;
-    }
-}
-#[embassy_executor::task]
-async fn test_task2(mut rx: usart::UartRx<'static, mode::Async>) {
-    let mut buffer = [0u8; 128];
-    loop {
-        // 使用embassy_time::with_timeout实现1秒超时
-        let len = match embassy_time::with_timeout(
-            Duration::from_secs(1),
-            rx.read_until_idle(&mut buffer),
-        )
-        .await
-        {
-            Ok(Ok(val)) => {
-                info!("task2 串口接收成功");
-                val
-            } // 成功读取到数据
-            Ok(Err(e)) => {
-                // 读取操作本身失败
-                warn!("rx读取长度失败{}", e);
-                continue;
-            }
-            Err(_) => {
-                // 超时错误
-                warn!("task2 串口接收超时");
-                continue;
-            }
-        };
-        if len > 0 {
-            let mut tx_g = SHARED_TX.lock().await;
-            let tx = match tx_g.as_mut() {
-                Some(val) => val,
-                None => {
-                    warn!("task2 TX失败");
-                    continue;
-                }
-            };
-            match tx.write(&mut buffer[..len]).await {
-                Ok(_) => (),
-                Err(e) => {
-                    warn!("{}", e);
-                    continue;
-                }
-            }
-            drop(tx_g);
-        }
-    }
+    info!("System Initialized");
 }

@@ -20,6 +20,7 @@ impl<'d, T: Instance, P: AdcChannel<T>> Soil<'d, T, P> {
 #[embassy_executor::task]
 pub async fn soil(mut adc: Adc<'static, ADC1>, pin: embassy_stm32::Peri<'static, PA0>) {
     use embassy_stm32::adc::SampleTime;
+    let tx_sender = crate::config::UART_TX_CHANNEL.sender();
     adc.set_sample_time(SampleTime::CYCLES239_5);
 
     let mut soil = Soil::new(adc, pin);
@@ -27,6 +28,11 @@ pub async fn soil(mut adc: Adc<'static, ADC1>, pin: embassy_stm32::Peri<'static,
         defmt::info!("Starting soil read...");
         let value = soil.read().await;
         defmt::info!("Soil moisture: {}", value);
+
+        let report =
+            crate::protocol::TxMessage::Sensor(crate::protocol::SensorData::SoilMoisture(value));
+        tx_sender.send(report).await;
+
         Timer::after(Duration::from_secs(1)).await;
     }
 }

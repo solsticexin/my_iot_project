@@ -11,6 +11,7 @@ pub type I2cDriver = I2c<'static, Async, Master>;
 /// 该任务获取 I2C 驱动的所有权，进行传感器初始化和周期性读取光照数据
 #[embassy_executor::task]
 pub async fn bh1750_read(mut i2c: I2cDriver) {
+    let tx_sender = crate::config::UART_TX_CHANNEL.sender();
     defmt::info!("BH1750 任务已启动");
 
     // 初始化传感器：首先向设备发送通电命令
@@ -47,6 +48,15 @@ pub async fn bh1750_read(mut i2c: I2cDriver) {
                 // 高分辨率模式下，lux = raw_data / 1.2
                 let lux: f32 = (raw_data as f32) / 1.2;
                 defmt::info!("光照强度 {} lux，原始数据 {}", lux, raw_data);
+
+                // 上报 (Cast raw data directly as protocol requests u16, or send calculated?)
+                // API Document says LightIntensity (u16).
+                // Let's send the raw/1.2 casted to u16.
+                let lux_u16 = lux as u16;
+                let report = crate::protocol::TxMessage::Sensor(
+                    crate::protocol::SensorData::LightIntensity(lux_u16),
+                );
+                tx_sender.send(report).await;
             }
             Err(e) => defmt::info!("读取数据失败：{:?}", e),
         }

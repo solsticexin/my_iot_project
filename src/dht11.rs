@@ -6,7 +6,7 @@
 
 use defmt::{error, info};
 use embassy_stm32::gpio::Flex;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+
 use embassy_time::{Delay, Duration, Instant, Timer};
 use embedded_hal::delay::DelayNs;
 
@@ -32,8 +32,9 @@ pub enum Dh11Error {
 #[embassy_executor::task]
 pub async fn dh11_task(
     mut pin: Flex<'static>,
-    sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, [u8; 5], 2>,
+    // Removed specific sender, use global UART_TX_CHANNEL
 ) {
+    let tx_sender = crate::config::UART_TX_CHANNEL.sender();
     loop {
         // 唤醒DHT11传感器
         wake_up_sensor(&mut pin).await;
@@ -50,6 +51,21 @@ pub async fn dh11_task(
             Ok(data) => {
                 // 数据读取成功，记录日志
                 info!("dh11_read: {},{},{},{}", data[0], data[1], data[2], data[3]);
+
+                // 上报湿度 (data[0].data[1]) 0.01% -> u16
+                // DHT11 只有整数部分有效
+                let humidity = (data[0] as u16) * 100 + (data[1] as u16);
+                let report_hum = crate::protocol::TxMessage::Sensor(
+                    crate::protocol::SensorData::Humidity(humidity),
+                );
+                tx_sender.send(report_hum).await;
+
+                // 上报温度 (data[2].data[3]) 0.01C -> i16
+                let temp = (data[2] as i16) * 100 + (data[3] as i16);
+                let report_temp = crate::protocol::TxMessage::Sensor(
+                    crate::protocol::SensorData::Temperature(temp),
+                );
+                tx_sender.send(report_temp).await;
             }
             Err(e) => {
                 // 数据读取失败，记录错误
