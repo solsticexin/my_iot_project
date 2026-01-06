@@ -12,3 +12,15 @@ DEFMT_LOG = "trace"
 [unstable]
 build-std = ["core"]
 build-std-features = ["panic_immediate_abort"]
+
+
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+[source.rsproxy]
+registry = "https://rsproxy.cn/crates.io-index"
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+[registries.rsproxy]
+index = "https://rsproxy.cn/crates.io-index"
+[net]
+git-fetch-with-cli = true

@@ -6,8 +6,6 @@ mod config;
 mod dht11;
 mod fmt;
 mod soil;
-mod st7735;
-mod esp01s;
 
 use defmt::info;
 // mod st7735_async;
@@ -118,108 +116,13 @@ async fn main(spawner: Spawner) {
             error!("Failed to spawn task: {}", e);
         }
     }
-    match spawner.spawn(test_st7735_task(spi_async, dc, rst, cs)) {
-        Ok(_) => (),
-        Err(e) => {
-            error!("Failed to spawn test_st7735_task: {}", e);
-        }
-    }
+
     match spawner.spawn(bh1750::bh1750_read(i2c_bh1750)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn bh1750_read task: {}", e);
         }
     }
-    // match spawner.spawn(soil::soil(adc, p.PA0)) {
-    //     Ok(_) => (),
-    //     Err(e) => {
-    //         error!("Failed to spawn soil task: {}", e);
-    //     }
-    // }
-    match spawner.spawn(usart_task(usart)) {
-        Ok(_) => (),
-        Err(e) => {
-            error!("Failed to spawn usart_tack task: {}", e);
-        }
-    }
+
     //===============================
-}
-
-//===============================
-//draw任务
-//===============================
-// #[embassy_executor::task]
-// async fn draw_task(
-//     mut display: st7735::St7735Display,
-//     receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, [u8; 5], 2>,
-// ) {
-//     loop {
-//         let data = receiver.receive().await;
-//         let hum_int = data[0];
-//         let temp_int = data[2];
-
-//         // --- 可视化显示 (画条形图) ---
-
-//         // 1. 清除旧的图形 (用黑色矩形覆盖)
-//         Rectangle::new(Point::new(10, 20), Size::new(100, 60))
-//             .into_styled(PrimitiveStyle::with_fill(Rgb565::BLACK))
-//             .draw(&mut display)
-//             .unwrap();
-
-//         // 2. 画温度条 (红色) - 长度根据温度值变化
-//         let temp_len = (temp_int as u32).min(100) * 2; // 放大一点便于观察
-//         Rectangle::new(Point::new(10, 30), Size::new(temp_len, 10))
-//             .into_styled(PrimitiveStyle::with_fill(Rgb565::RED))
-//             .draw(&mut display)
-//             .unwrap();
-
-//         // 3. 画湿度条 (青色)
-//         let hum_len = (hum_int as u32).min(100);
-//         Rectangle::new(Point::new(10, 50), Size::new(hum_len, 10))
-//             .into_styled(PrimitiveStyle::with_fill(Rgb565::CYAN))
-//             .draw(&mut display)
-//             .unwrap();
-//         Timer::after(Duration::from_secs(2)).await
-//     }
-// }
-#[embassy_executor::task]
-async fn usart_task(mut usart:embassy_stm32::usart::Uart<'static,embassy_stm32::mode::Async>){
-    loop {
-        usart.write(b"Hello, World!\r\n").await.unwrap();
-        let mut data =esp01s::DataReportFrame::new(25, 60, 30, 500, true, false, true, false);
-        let mut json = data.to_json();
-        json.push_str("\r\n");
-        usart.write(json.as_bytes()).await.unwrap();
-        info!("Sent: Hello, World!\r\n");
-        Timer::after(Duration::from_secs(1)).await;
-    }
-}
-#[embassy_executor::task]
-async fn test_st7735_task(
-    spi: Spi<'static, embassy_stm32::mode::Async>,
-    dc: Output<'static>,
-    rst: Output<'static>,
-    cs: Output<'static>,
-) {
-    let mut display = st7735::ST7735::new(spi, rst, dc, cs);
-    display.init().await;
-
-    // 1. 设置方向 ( Landscape)
-    display
-        .set_orientation(st7735::Orientation::Landscape)
-        .await;
-
-    // 2. 清屏 (蓝色背景)
-    display.clear(Rgb565::BLUE).await;
-
-    // 3. 画圆 (黄色, 居中) - Landscape 模式下通常宽160, 高128
-    // 中心点 (80, 64)
-    let line_style = PrimitiveStyle::with_stroke(Rgb565::YELLOW, 2);
-    let circle = Circle::new(Point::new(80, 64), 40).into_styled(line_style);
-
-    display.draw_pixels(circle.pixels()).await;
-
-    loop {
-        Timer::after(Duration::from_secs(1)).await;
-    }
 }
