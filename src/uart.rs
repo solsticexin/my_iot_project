@@ -5,6 +5,7 @@ use embassy_stm32::mode::Async;
 use embassy_stm32::usart::{UartRx, UartTx};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Receiver, Sender};
+use embassy_time::{Duration, Timer};
 use heapless::String;
 
 
@@ -28,6 +29,13 @@ pub async fn uart_rx(mut rx:UartRx<'static,Async>,
                      rx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>)
 {
     let mut buffer=[0u8,128];
+    //测试代码
+    // let commands = [
+        // "{\"type\":\"cmd\",\"target\":\"water\",\"action\":\"on\",\"time\":0}\r\n".parse::<String<128>>().unwrap(),
+        // "{\"type\":\"cmd\",\"target\":\"fan\",\"action\":\"on\",\"time\":0}\r\n".parse::<String<128>>().unwrap(),
+        // "{\"type\":\"cmd\",\"target\":\"water\",\"action\":\"off\",\"time\":0}\r\n".parse::<String<128>>().unwrap(),
+    //     "{\"type\":\"cmd\",\"target\":\"fan\",\"action\":\"pulse\",\"time\":2}\r\n".parse::<String<128>>().unwrap(),
+    // ];
     loop {
         let len=match rx.read_until_idle(&mut buffer).await {
             Ok(val)=>val,
@@ -39,5 +47,12 @@ pub async fn uart_rx(mut rx:UartRx<'static,Async>,
         };
         let frame=frame.parse::<String<128>>().unwrap();
         rx_sender.send(frame).await;
+
+        //测试代码
+        // for frame in &commands{
+        //     let frame=frame.parse::<String<128>>().unwrap();
+        //     rx_sender.send(frame).await;
+        //     Timer::after(Duration::from_secs(4)).await;
+        // }
     }
 }
