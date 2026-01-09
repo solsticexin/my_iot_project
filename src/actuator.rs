@@ -1,6 +1,8 @@
 use embassy_stm32::gpio::{Level, Output};
 use embassy_time::{Duration, Timer};
 
+///增加静态bool用来打断命令该命令只在 use crate::uart::uart_rx;中修改，
+
 ///执行器执行完命令后执行的状态：0表示关1表示开
 pub struct ActuatorStatus{
     pub water:u8,

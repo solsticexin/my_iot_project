@@ -7,11 +7,10 @@ use heapless::{format, String};
 use serde::Deserialize;
 use crate::actuator::{Ack, Act, Actuator, ACTUATOR_STATUS};
 
-// const DEFAULT_FRAME:&str="hello world\r\n";
 
 #[task]
 pub async fn control(
-    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,8>,
+    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,4>,
     dht11_receiver:Receiver<'static, CriticalSectionRawMutex, (u8,u8), 2>,
     bh1750_receiver:Receiver<'static, CriticalSectionRawMutex, f32, 2>,
     soil_receiver:Receiver<'static, CriticalSectionRawMutex, u16, 2>,
@@ -48,8 +47,8 @@ pub async fn control(
         let light=unsafe{ACTUATOR_STATUS.light};
         let buzzer=unsafe{ACTUATOR_STATUS.buzzer};
         
-        let frame: String<128> = format!(
-            r#"{{"type":"data","temp":{},"humi":{},"soil":{},"lux":{},"water":{},"light":{},"fan":{},"buzzer":{}}}\r\n"#,
+        let json_part: String<128> = format!(
+            "{{\"type\":\"data\",\"temp\":{},\"humi\":{},\"soil\":{},\"lux\":{},\"water\":{},\"light\":{},\"fan\":{},\"buzzer\":{}}}",
             temp as f32 ,
             humi as f32 ,
             soil_data,
@@ -60,6 +59,8 @@ pub async fn control(
             buzzer
         ).unwrap();
         
+        let frame: String<128> = format!("{}\r\n", json_part).unwrap();
+        
         tx_sender.send(frame).await;
     }
 }
@@ -67,17 +68,22 @@ pub async fn control(
 #[task]
 pub async fn sub_control(
     rx_receiver:Receiver<'static,CriticalSectionRawMutex,String<128>,2>,
-    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,8>,
+    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,4>,
     mut actuator:Actuator<'static>,
 ){
-    let rx_cmd_frame=rx_receiver.receive().await;
-    let temp=rx_cmd_frame.as_str();
-    let (cmd,_):(Cmd, usize)=serde_json_core::from_str(temp).unwrap();
-    let cmd=cmd.analysis();
-    let frame=ack_frame_wrap(&cmd);
-    let (act,switch)=cmd.analysis();
-   actuator.set(act,switch).await;
-    tx_sender.send(frame).await;
+    loop {
+        let rx_cmd_frame=rx_receiver.receive().await;
+        let temp=rx_cmd_frame.as_str();
+        let cmd:Cmd=match serde_json_core::from_str(temp) {
+            Ok((cmd,_))=>cmd,
+            Err(_)=>{warn!("反序列化失败");continue;}
+        };
+        let cmd=cmd.analysis();
+        let frame=ack_frame_wrap(&cmd);
+        let (act,switch)=cmd.analysis();
+        actuator.set(act,switch).await;
+        tx_sender.send(frame).await;
+    }
 }
 
 #[derive(Deserialize, Debug, defmt::Format)]
@@ -85,7 +91,7 @@ struct Cmd {
     r#type: String<16>,
     target: String<16>,
     action: String<16>,
-    time: u64,
+    time: i32,
 }
 impl Cmd {
     pub fn analysis(&self)->Ack{
@@ -102,7 +108,7 @@ impl Cmd {
         match action {
             "on" => Ack::On(act),
             "off" =>Ack::Off(act),
-            "pulse" => Ack::Pulse(act,time),
+            "pulse" => Ack::Pulse(act,time as u64),
             _ => unreachable!()
         }
     }
