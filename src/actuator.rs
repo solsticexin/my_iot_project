@@ -1,6 +1,26 @@
 use embassy_stm32::gpio::{Level, Output};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
+///执行器执行完命令后执行的状态：0表示关1表示开
+pub struct ActuatorStatus{
+    pub water:u8,
+    pub fan:u8,
+    pub light:u8,
+    pub buzzer:u8,
+}
+
+///执行器全局唯一，状态唯一
+///执行器状态的修改只在set_on函数中修改,所以不需要互斥锁
+pub static mut ACTUATOR_STATUS: ActuatorStatus = ActuatorStatus {
+    water: 0,
+    fan: 0,
+    light: 0,
+    buzzer: 0,
+};
+
+///执行器低电平触发
 pub struct  Actuator<'d>{
     water:Output<'d>,
     fan:Output<'d>,
@@ -20,56 +40,109 @@ impl<'d> Actuator<'d> {
         buzzer.set_level(Level::High);
         Self{water,fan,light,buzzer}
     }
-    ///执行器低电平触发
-    pub fn set_on(&mut self,act: Act)->Ack{
-        match act {
-            Act::Water=> { self.water.set_level(Level::Low);Ack::On(Act::Water) },
-            Act::Fan=> { self.fan.set_level(Level::Low);Ack::On(Act::Fan)},
-            Act::Light=> { self.light.set_level(Level::Low);Ack::On(Act::Light) },
-            Act::Buzzer=> { self.buzzer.set_level(Level::Low);Ack::On(Act::Buzzer) },
+
+    pub async fn set(&mut self,act:Act,switch: Switch){
+        match switch {
+            Switch::On=>self.set_on(act).await,
+            Switch::Off=>self.set_off(act).await,
+            Switch::Pulse(time)=>self.set_pulse((act,time)).await,
         }
     }
-    pub fn set_off(&mut self,act: Act)->Ack{
-        match act {
-            Act::Water=> { self.water.set_level(Level::High);Ack::Off(Act::Water) },
-            Act::Fan=> { self.fan.set_level(Level::High);Ack::Off(Act::Fan)},
-            Act::Light=> { self.light.set_level(Level::High);Ack::Off(Act::Light) },
-            Act::Buzzer=> { self.buzzer.set_level(Level::High);Ack::Off(Act::Buzzer) },
-        }
-    }
-    pub async fn set_pulse(&mut self,act: Act,time:u64)->Ack{
+
+    ///使用async只是为了保持封装一致
+    pub async fn set_on(&mut self,act: Act){
         match act {
             Act::Water=> {
-                self.water.set_level(Level::High);
-                Timer::after(Duration::from_secs(time)).await;
-                Ack::Pulse(Act::Water,time)
+                self.water.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.water=1;}
             },
             Act::Fan=> {
+                self.fan.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.fan=1;}
+            },
+            Act::Light=> { 
+                self.light.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.light=1;}
+            },
+            Act::Buzzer=> { 
+                self.buzzer.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.buzzer=1;}
+            },
+        }
+    }
+    
+    ///使用async只是为了保持封装一致
+    pub async fn set_off(&mut self,act: Act){
+        match act {
+            Act::Water=> { 
+                self.water.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.water=0;}
+            },
+            Act::Fan=> { 
                 self.fan.set_level(Level::High);
-                Timer::after(Duration::from_secs(time)).await;
-                Ack::Pulse(Act::Fan,time)},
-            Act::Light=> {
+                unsafe {ACTUATOR_STATUS.fan=0;}
+            },
+            Act::Light=> { 
                 self.light.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.light=0;}
+            },
+            Act::Buzzer=> { 
+                self.buzzer.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.buzzer=0;}
+            },
+        }
+    }
+    pub async fn set_pulse(&mut self,pulse:(Act,u64)){
+        let (act,time)=pulse;
+        match act {
+            Act::Water=> {
+                self.water.set_level(Level::Low);  // 激活设备（低电平触发）
                 Timer::after(Duration::from_secs(time)).await;
-                Ack::Pulse(Act::Light,time)
+                self.water.set_level(Level::High); // 恢复到非激活状态
+            },
+            Act::Fan=> {
+                self.fan.set_level(Level::Low);  // 激活设备（低电平触发）
+                Timer::after(Duration::from_secs(time)).await;
+                self.fan.set_level(Level::High); // 恢复到非激活状态
+            },
+            Act::Light=> {
+                self.light.set_level(Level::Low);  // 激活设备（低电平触发）
+                Timer::after(Duration::from_secs(time)).await;
+                self.light.set_level(Level::High); // 恢复到非激活状态
             },
             Act::Buzzer=> {
-                self.buzzer.set_level(Level::High);
+                self.buzzer.set_level(Level::Low);  // 激活设备（低电平触发）
                 Timer::after(Duration::from_secs(time)).await;
-                Ack::Pulse(Act::Buzzer,time)
+                self.buzzer.set_level(Level::High); // 恢复到非激活状态
             },
         }
     }
 }
 ///执行器
+#[derive(Copy, Clone)]
 pub enum Act{
     Water,
     Fan,
     Light,
     Buzzer
 }
+#[derive(Copy, Clone)]
+pub enum Switch{
+    On,
+    Off,
+    Pulse(u64),
+}
 pub enum Ack{
     On(Act),
     Off(Act),
     Pulse(Act,u64),
+}
+impl Ack {
+    pub fn analysis(&self)->(Act,Switch){
+        match self {
+            Ack::On(act)=>(*act,Switch::On),
+            Ack::Off(act)=>(*act,Switch::Off),
+            Ack::Pulse(act,time)=>(*act,Switch::Pulse(*time))
+        }
+    }
 }

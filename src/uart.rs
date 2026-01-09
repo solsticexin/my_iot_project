@@ -23,7 +23,7 @@ pub async fn uart_tx(mut tx:UartTx<'static,Async>,
 ///该项目只接收数据，然后通过信道转到控制中心处理
 #[task]
 pub async fn uart_rx(mut rx:UartRx<'static,Async>,
-                     sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>)
+                     rx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>)
 {
     let mut buffer=[0u8,128];
     loop {
@@ -36,6 +36,6 @@ pub async fn uart_rx(mut rx:UartRx<'static,Async>,
             Err(_)=>{warn!("uart_rx读取数据转换str失败");continue;}
         };
         let frame=frame.parse::<String<128>>().unwrap();
-        sender.send(frame).await;
+        rx_sender.send(frame).await;
     }
 }

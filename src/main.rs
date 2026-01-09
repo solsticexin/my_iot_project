@@ -42,7 +42,7 @@ async fn main(spawner: Spawner) {
     let p = embassy_stm32::init(config);
     //发送,接收
     let dht11_sender = config::DHT11_CHANNEL.sender();
-    let _dht11_receiver = config::DHT11_CHANNEL.receiver();
+    let dht11_receiver = config::DHT11_CHANNEL.receiver();
 
     let bh1750_sender=config::BH1750_CHANNEL.sender();
     let bh1750_receiver=config::BH1750_CHANNEL.receiver();
