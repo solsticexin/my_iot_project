@@ -50,11 +50,20 @@ async fn main(spawner: Spawner) {
     let soil_sender=config::SOIL_CHANNEL.sender();
     let soil_receiver=config::SOIL_CHANNEL.receiver();
 
-    let tx_sender=config::TX_CHANNEL.sender();
+    let tx_sender1 =config::TX_CHANNEL.sender();
+    let tx_sender2=config::TX_CHANNEL.sender();
     let tx_receiver=config::TX_CHANNEL.receiver();
 
     let rx_sender=config::RX_CHANNEL.sender();
     let rx_receiver=config::RX_CHANNEL.receiver();
+
+    //配置执行器/继电器
+    let water_pin=Output::new(p.PB12,Level::High,Speed::Low);
+    let fan_pin=Output::new(p.PB13,Level::High,Speed::Low);
+    let light_pin=Output::new(p.PB14,Level::High,Speed::Low);
+    let buzzer_pin=Output::new(p.PB15,Level::High,Speed::Low);
+    let relay=actuator::Actuator::new(water_pin,fan_pin,light_pin,buzzer_pin);
+
     //===============================
     //配置dh11
     //===============================
@@ -123,12 +132,25 @@ async fn main(spawner: Spawner) {
     let (tx,rx)=usart.split();
     //===============================
     //执行任务
-    match spawner.spawn(control_center::control(tx_sender,rx_receiver)) {
+    match spawner.spawn(control_center::control(
+        tx_sender1,
+        dht11_receiver,
+        bh1750_receiver,
+        soil_receiver,
+    )) {
         Ok(_)=>(),
         Err(e)=>{
-            error!("Failed to spawn dh11_task task: {}", e);
+            error!("Failed to spawn control task: {}", e);
         }
     }
+
+    match spawner.spawn(control_center::sub_control(rx_receiver,tx_sender2,relay)) {
+        Ok(_)=>(),
+        Err(e)=>{
+            error!("Failed to spawn sub_control task: {}", e);
+        }
+    }
+
     match spawner.spawn(dht11::dh11_task(dh11_pin, dht11_sender)) {
         Ok(_) => (),
         Err(e) => {

@@ -10,10 +10,10 @@ use heapless::String;
 ///循环发送frame，该任务只发送frame不做其他处理
 #[task]
 pub async fn uart_tx(mut tx:UartTx<'static,Async>,
-                     receiver:Receiver<'static,CriticalSectionRawMutex,String<128>,2>)
+                     tx_receiver:Receiver<'static,CriticalSectionRawMutex,String<128>,8>)
 {
     loop {
-        let frame= receiver.receive().await;
+        let frame= tx_receiver.receive().await;
         match tx.write(frame.as_bytes()).await {
             Ok(_)=>(),
             Err(e)=>{warn!("串口发送帧失败{}",e);continue;},

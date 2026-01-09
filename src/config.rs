@@ -45,7 +45,7 @@ pub const CMD_POWER_ON: u8 = 0x01u8; //通电指令
 pub const CMD_H_RES_MODE: u8 = 0x10; //连续高分辨率模式
 
 //全局静态变量
-pub static TX_CHANNEL:Channel<CriticalSectionRawMutex,String<128>,2>=Channel::new();
+pub static TX_CHANNEL:Channel<CriticalSectionRawMutex,String<128>,8>=Channel::new();
 pub static RX_CHANNEL:Channel<CriticalSectionRawMutex,String<128>,2>=Channel::new();
 ///第一位是湿度，第二位是温度
 pub static DHT11_CHANNEL: Channel<CriticalSectionRawMutex,(u8, u8), 2> = Channel::new();

@@ -1,18 +1,17 @@
-use defmt::{info, warn};
+use defmt::warn;
 use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Receiver, Sender};
 use embassy_time::{with_timeout, Duration};
 use heapless::{format, String};
-
-
 use serde::Deserialize;
-use crate::actuator::{Ack, Act, Actuator};
-const DEFAULT_FRAME:&str="hello world\r\n";
+use crate::actuator::{Ack, Act, Actuator, ACTUATOR_STATUS};
+
+// const DEFAULT_FRAME:&str="hello world\r\n";
 
 #[task]
 pub async fn control(
-    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>,
+    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,8>,
     dht11_receiver:Receiver<'static, CriticalSectionRawMutex, (u8,u8), 2>,
     bh1750_receiver:Receiver<'static, CriticalSectionRawMutex, f32, 2>,
     soil_receiver:Receiver<'static, CriticalSectionRawMutex, u16, 2>,
@@ -25,7 +24,10 @@ pub async fn control(
             warn!("dht11读取超时");
             (0, 0)
         });
-        
+
+        //湿度,温度解构不是临时参数
+        let (humi,temp)=dht11_data;
+
         let bh1750_data= with_timeout(
             Duration::from_millis(2500),
             bh1750_receiver.receive()
@@ -41,13 +43,31 @@ pub async fn control(
             warn!("soil读取超时");
             0
         });
+        let water=unsafe{ACTUATOR_STATUS.water};
+        let fan=unsafe{ACTUATOR_STATUS.fan};
+        let light=unsafe{ACTUATOR_STATUS.light};
+        let buzzer=unsafe{ACTUATOR_STATUS.buzzer};
+        
+        let frame: String<128> = format!(
+            r#"{{"type":"data","temp":{},"humi":{},"soil":{},"lux":{},"water":{},"light":{},"fan":{},"buzzer":{}}}\r\n"#,
+            temp as f32 ,
+            humi as f32 ,
+            soil_data,
+            bh1750_data,
+            water,
+            light,
+            fan,
+            buzzer
+        ).unwrap();
+        
+        tx_sender.send(frame).await;
     }
 }
 
 #[task]
 pub async fn sub_control(
     rx_receiver:Receiver<'static,CriticalSectionRawMutex,String<128>,2>,
-    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>,
+    tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,8>,
     mut actuator:Actuator<'static>,
 ){
     let rx_cmd_frame=rx_receiver.receive().await;

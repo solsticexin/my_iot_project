@@ -1,6 +1,4 @@
 use embassy_stm32::gpio::{Level, Output};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 
 ///执行器执行完命令后执行的状态：0表示关1表示开
@@ -96,24 +94,32 @@ impl<'d> Actuator<'d> {
         let (act,time)=pulse;
         match act {
             Act::Water=> {
-                self.water.set_level(Level::Low);  // 激活设备（低电平触发）
+                self.water.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.water=1;}
                 Timer::after(Duration::from_secs(time)).await;
-                self.water.set_level(Level::High); // 恢复到非激活状态
+                self.water.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.water=0;}
             },
             Act::Fan=> {
-                self.fan.set_level(Level::Low);  // 激活设备（低电平触发）
+                self.fan.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.fan=1;}
                 Timer::after(Duration::from_secs(time)).await;
-                self.fan.set_level(Level::High); // 恢复到非激活状态
+                self.fan.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.fan=0;}
             },
             Act::Light=> {
-                self.light.set_level(Level::Low);  // 激活设备（低电平触发）
+                self.light.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.light=1;}
                 Timer::after(Duration::from_secs(time)).await;
-                self.light.set_level(Level::High); // 恢复到非激活状态
+                self.light.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.light=0;}
             },
             Act::Buzzer=> {
-                self.buzzer.set_level(Level::Low);  // 激活设备（低电平触发）
+                self.buzzer.set_level(Level::Low);
+                unsafe {ACTUATOR_STATUS.buzzer=1;}
                 Timer::after(Duration::from_secs(time)).await;
-                self.buzzer.set_level(Level::High); // 恢复到非激活状态
+                self.buzzer.set_level(Level::High);
+                unsafe {ACTUATOR_STATUS.buzzer=0;}
             },
         }
     }
