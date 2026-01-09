@@ -1,6 +1,8 @@
 use embassy_stm32::{bind_interrupts, peripherals, rcc, time::mhz};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use heapless::String;
+
 pub fn stm_config() -> embassy_stm32::Config {
     let mut stm_config = embassy_stm32::Config::default();
     let clocks_config = clocks_config();
@@ -34,6 +36,7 @@ bind_interrupts!(pub struct Irqs {
     I2C1_EV => embassy_stm32::i2c::EventInterruptHandler<peripherals::I2C1>;
     I2C1_ER => embassy_stm32::i2c::ErrorInterruptHandler<peripherals::I2C1>;
     USART1  => embassy_stm32::usart::InterruptHandler<peripherals::USART1>;
+    ADC1_2 => embassy_stm32::adc::InterruptHandler<peripherals::ADC1>;
 });
 
 //BH1750 常量
@@ -42,4 +45,6 @@ pub const CMD_POWER_ON: u8 = 0x01u8; //通电指令
 pub const CMD_H_RES_MODE: u8 = 0x10; //连续高分辨率模式
 
 //全局静态变量
-pub static CHANNEL: Channel<CriticalSectionRawMutex, [u8; 5], 2> = Channel::new();
+pub static TX_CHANNEL:Channel<CriticalSectionRawMutex,String<128>,2>=Channel::new();
+pub static RX_CHANNEL:Channel<CriticalSectionRawMutex,String<128>,2>=Channel::new();
+pub static DHT11_CHANNEL: Channel<CriticalSectionRawMutex,(u8, u8), 2> = Channel::new();

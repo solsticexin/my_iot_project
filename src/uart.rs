@@ -1,0 +1,41 @@
+use core::str::{from_utf8, FromStr};
+use defmt::warn;
+use embassy_executor::task;
+use embassy_stm32::mode::Async;
+use embassy_stm32::usart::{UartRx, UartTx};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::{Receiver, Sender};
+use heapless::String;
+
+///循环发送frame，该任务只发送frame不做其他处理
+#[task]
+pub async fn uart_tx(mut tx:UartTx<'static,Async>,
+                     receiver:Receiver<'static,CriticalSectionRawMutex,String<128>,2>)
+{
+    loop {
+        let frame= receiver.receive().await;
+        match tx.write(frame.as_bytes()).await {
+            Ok(_)=>(),
+            Err(e)=>{warn!("串口发送帧失败{}",e);continue;},
+        }
+    }
+}
+///该项目只接收数据，然后通过信道转到控制中心处理
+#[task]
+pub async fn uart_rx(mut rx:UartRx<'static,Async>,
+                     sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>)
+{
+    let mut buffer=[0u8,128];
+    loop {
+        let len=match rx.read_until_idle(&mut buffer).await {
+            Ok(val)=>val,
+            Err(e)=>{warn!("读取失败{}",e);continue;}
+        };
+        let frame=match from_utf8(&buffer[0..len]) {
+            Ok(val)=>val,
+            Err(_)=>{warn!("转换失败");continue;}
+        };
+        let frame:String<128>=String::from_str(frame).unwrap();
+        sender.send(frame).await;
+    }
+}

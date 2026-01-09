@@ -6,15 +6,16 @@ mod config;
 mod dht11;
 mod fmt;
 mod soil;
+mod uart;
+mod control_center;
 
 use defmt::info;
-// mod st7735_async;
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::RgbColor,
-    prelude::*,
-    primitives::{Circle, PrimitiveStyle},
-};
+// use embedded_graphics::{
+//     pixelcolor::Rgb565,
+//     prelude::RgbColor,
+//     prelude::*,
+//     primitives::{Circle, PrimitiveStyle},
+// };
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 #[cfg(feature = "defmt")]
@@ -39,8 +40,14 @@ async fn main(spawner: Spawner) {
     let config = config::stm_config();
     let p = embassy_stm32::init(config);
     //发送,接收
-    let sender = config::CHANNEL.sender();
-    let _receiver = config::CHANNEL.receiver();
+    let dht11_sender = config::DHT11_CHANNEL.sender();
+    let _dht11_receiver = config::DHT11_CHANNEL.receiver();
+
+    let tx_sender=config::TX_CHANNEL.sender();
+    let tx_receiver=config::TX_CHANNEL.receiver();
+
+    let rx_sender=config::RX_CHANNEL.sender();
+    let rx_receiver=config::RX_CHANNEL.receiver();
     //===============================
     //配置dh11
     //===============================
@@ -85,11 +92,11 @@ async fn main(spawner: Spawner) {
 
     //===============================
     //串口配置
-    let mut _usart1_config=embassy_stm32::usart::Config::default();
-    _usart1_config.baudrate=115200;//设置波特率
-    _usart1_config.data_bits=embassy_stm32::usart::DataBits::DataBits8;//设置数据位为8位
-    _usart1_config.stop_bits=embassy_stm32::usart::StopBits::STOP1;//设置停止位为1位
-    _usart1_config.parity=embassy_stm32::usart::Parity::ParityNone;//设置无校验位
+    let mut _usart_config =embassy_stm32::usart::Config::default();
+    _usart_config.baudrate=115200;//设置波特率
+    _usart_config.data_bits=embassy_stm32::usart::DataBits::DataBits8;//设置数据位为8位
+    _usart_config.stop_bits=embassy_stm32::usart::StopBits::STOP1;//设置停止位为1位
+    _usart_config.parity=embassy_stm32::usart::Parity::ParityNone;//设置无校验位
     let usart=embassy_stm32::usart::Uart::new(
         p.USART1,
         p.PA10,
@@ -97,7 +104,7 @@ async fn main(spawner: Spawner) {
         config::Irqs,
         p.DMA1_CH4,
         p.DMA1_CH5,
-        _usart1_config,
+        _usart_config,
     );
     let usart = match usart {
         Ok(val)=>val,
@@ -106,11 +113,10 @@ async fn main(spawner: Spawner) {
             return;
         },
     };
-
-
+    let (tx,rx)=usart.split();
     //===============================
     //执行dh11任务
-    match spawner.spawn(dht11::dh11_task(dh11_pin, sender)) {
+    match spawner.spawn(dht11::dh11_task(dh11_pin, dht11_sender)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn task: {}", e);
@@ -123,6 +129,17 @@ async fn main(spawner: Spawner) {
             error!("Failed to spawn bh1750_read task: {}", e);
         }
     }
-
+    match spawner.spawn(uart::uart_tx(tx,tx_receiver)) {
+        Ok(_)=>(),
+        Err(e)=>{
+            error!("Failed to spawn uart_tx task: {}", e)
+        }
+    }
+    match spawner.spawn(uart::uart_rx(rx,rx_sender)) {
+        Ok(_)=>(),
+        Err(e)=>{
+            error!("Failed to spawn uart_rx task: {}", e)
+        }
+    }
     //===============================
 }
