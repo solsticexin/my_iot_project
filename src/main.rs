@@ -44,6 +44,12 @@ async fn main(spawner: Spawner) {
     let dht11_sender = config::DHT11_CHANNEL.sender();
     let _dht11_receiver = config::DHT11_CHANNEL.receiver();
 
+    let bh1750_sender=config::BH1750_CHANNEL.sender();
+    let bh1750_receiver=config::BH1750_CHANNEL.receiver();
+
+    let soil_sender=config::SOIL_CHANNEL.sender();
+    let soil_receiver=config::SOIL_CHANNEL.receiver();
+
     let tx_sender=config::TX_CHANNEL.sender();
     let tx_receiver=config::TX_CHANNEL.receiver();
 
@@ -130,12 +136,20 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    match spawner.spawn(bh1750::bh1750_read(i2c_bh1750)) {
+    match spawner.spawn(bh1750::bh1750_read(i2c_bh1750,bh1750_sender)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn bh1750_read task: {}", e);
         }
     }
+
+    match spawner.spawn(soil::soil_task(adc,p.PA0,soil_sender)) {
+        Ok(_)=>(),
+        Err(e)=>{
+            error!("Failed to spawn soil_task task: {}", e)
+        }
+    }
+
     match spawner.spawn(uart::uart_tx(tx,tx_receiver)) {
         Ok(_)=>(),
         Err(e)=>{

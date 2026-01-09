@@ -3,6 +3,8 @@ use defmt;
 use embassy_stm32::i2c::I2c;
 use embassy_stm32::i2c::Master;
 use embassy_stm32::mode::Async;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Sender;
 use embassy_time::{Duration, Timer};
 
 pub type I2cDriver = I2c<'static, Async, Master>;
@@ -10,7 +12,10 @@ pub type I2cDriver = I2c<'static, Async, Master>;
 /// BH1750 光照传感器读取任务
 /// 该任务获取 I2C 驱动的所有权，进行传感器初始化和周期性读取光照数据
 #[embassy_executor::task]
-pub async fn bh1750_read(mut i2c: I2cDriver) {
+pub async fn bh1750_read(
+    mut i2c: I2cDriver,
+    sender:Sender<'static,CriticalSectionRawMutex,f32,2>
+) {
     defmt::info!("BH1750 任务已启动");
 
     // 初始化传感器：首先向设备发送通电命令
@@ -46,6 +51,7 @@ pub async fn bh1750_read(mut i2c: I2cDriver) {
                 // 根据 BH1750 数据手册，将原始数据转换为光照强度 (lux)
                 // 高分辨率模式下，lux = raw_data / 1.2
                 let lux: f32 = (raw_data as f32) / 1.2;
+                sender.send(lux).await;
                 defmt::info!("光照强度 {} lux，原始数据 {}", lux, raw_data);
             }
             Err(e) => defmt::info!("读取数据失败：{:?}", e),

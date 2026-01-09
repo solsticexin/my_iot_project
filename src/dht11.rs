@@ -32,7 +32,7 @@ pub enum Dh11Error {
 #[embassy_executor::task]
 pub async fn dh11_task(
     mut pin: Flex<'static>,
-    _sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, (u8,u8), 2>,
+    sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, (u8,u8), 2>,
 ) {
     loop {
         // 唤醒DHT11传感器
@@ -50,7 +50,7 @@ pub async fn dh11_task(
             Ok(data) => {
                 // 数据读取成功，记录日志并发送数据
                 info!("dh11_read: {},{},{},{}", data[0], data[1], data[2], data[3]);
-
+                sender.send((data[0],data[2])).await;
             }
             Err(e) => {
                 // 数据读取失败，记录错误
