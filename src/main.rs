@@ -8,6 +8,7 @@ mod fmt;
 mod soil;
 mod uart;
 mod control_center;
+mod actuator;
 
 use defmt::info;
 // use embedded_graphics::{
@@ -51,7 +52,7 @@ async fn main(spawner: Spawner) {
     //===============================
     //配置dh11
     //===============================
-    let mut dh11_pin = Flex::new(p.PB11);
+    let mut dh11_pin = Flex::new(p.PA1);
     dh11_pin.set_as_input_output(Speed::VeryHigh);
     //===============================
     //配置st7735
@@ -115,11 +116,17 @@ async fn main(spawner: Spawner) {
     };
     let (tx,rx)=usart.split();
     //===============================
-    //执行dh11任务
+    //执行任务
+    match spawner.spawn(control_center::control(tx_sender,rx_receiver)) {
+        Ok(_)=>(),
+        Err(e)=>{
+            error!("Failed to spawn dh11_task task: {}", e);
+        }
+    }
     match spawner.spawn(dht11::dh11_task(dh11_pin, dht11_sender)) {
         Ok(_) => (),
         Err(e) => {
-            error!("Failed to spawn task: {}", e);
+            error!("Failed to spawn dh11_task task: {}", e);
         }
     }
 

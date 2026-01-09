@@ -1,4 +1,4 @@
-use core::str::{from_utf8, FromStr};
+use core::str::from_utf8;
 use defmt::warn;
 use embassy_executor::task;
 use embassy_stm32::mode::Async;
@@ -29,13 +29,13 @@ pub async fn uart_rx(mut rx:UartRx<'static,Async>,
     loop {
         let len=match rx.read_until_idle(&mut buffer).await {
             Ok(val)=>val,
-            Err(e)=>{warn!("读取失败{}",e);continue;}
+            Err(e)=>{warn!("uart_rx 串口读取读取失败{}",e);continue;}
         };
         let frame=match from_utf8(&buffer[0..len]) {
             Ok(val)=>val,
-            Err(_)=>{warn!("转换失败");continue;}
+            Err(_)=>{warn!("uart_rx读取数据转换str失败");continue;}
         };
-        let frame:String<128>=String::from_str(frame).unwrap();
+        let frame=frame.parse::<String<128>>().unwrap();
         sender.send(frame).await;
     }
 }
