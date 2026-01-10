@@ -4,11 +4,11 @@ use embassy_time::{Duration, Timer};
 ///增加静态bool用来打断命令该命令只在 use crate::uart::uart_rx;中修改，
 
 ///执行器执行完命令后执行的状态：0表示关1表示开
-pub struct ActuatorStatus{
-    pub water:u8,
-    pub fan:u8,
-    pub light:u8,
-    pub buzzer:u8,
+pub struct ActuatorStatus {
+    pub water: u8,
+    pub fan: u8,
+    pub light: u8,
+    pub buzzer: u8,
 }
 
 ///执行器全局唯一，状态唯一
@@ -21,136 +21,174 @@ pub static mut ACTUATOR_STATUS: ActuatorStatus = ActuatorStatus {
 };
 
 ///执行器低电平触发
-pub struct  Actuator<'d>{
-    water:Output<'d>,
-    fan:Output<'d>,
-    light:Output<'d>,
-    buzzer:Output<'d>,
+pub struct Actuator<'d> {
+    water: Output<'d>,
+    fan: Output<'d>,
+    light: Output<'d>,
+    buzzer: Output<'d>,
 }
 impl<'d> Actuator<'d> {
     pub fn new(
-        mut water:Output<'d>,
-        mut fan:Output<'d>,
-        mut light:Output<'d>,
-        mut buzzer:Output<'d>,
-    )->Self{
+        mut water: Output<'d>,
+        mut fan: Output<'d>,
+        mut light: Output<'d>,
+        mut buzzer: Output<'d>,
+    ) -> Self {
         water.set_level(Level::High);
         fan.set_level(Level::High);
         light.set_level(Level::High);
         buzzer.set_level(Level::High);
-        Self{water,fan,light,buzzer}
+        Self {
+            water,
+            fan,
+            light,
+            buzzer,
+        }
     }
 
-    pub async fn set(&mut self,act:Act,switch: Switch){
+    pub async fn set(&mut self, act: Act, switch: Switch) {
         match switch {
-            Switch::On=>self.set_on(act).await,
-            Switch::Off=>self.set_off(act).await,
-            Switch::Pulse(time)=>self.set_pulse((act,time)).await,
+            Switch::On => self.set_on(act).await,
+            Switch::Off => self.set_off(act).await,
+            Switch::Pulse(time) => self.set_pulse((act, time)).await,
         }
     }
 
     ///使用async只是为了保持封装一致
-    pub async fn set_on(&mut self,act: Act){
+    pub async fn set_on(&mut self, act: Act) {
         match act {
-            Act::Water=> {
+            Act::Water => {
                 self.water.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.water=1;}
-            },
-            Act::Fan=> {
+                unsafe {
+                    ACTUATOR_STATUS.water = 1;
+                }
+            }
+            Act::Fan => {
                 self.fan.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.fan=1;}
-            },
-            Act::Light=> { 
+                unsafe {
+                    ACTUATOR_STATUS.fan = 1;
+                }
+            }
+            Act::Light => {
                 self.light.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.light=1;}
-            },
-            Act::Buzzer=> { 
+                unsafe {
+                    ACTUATOR_STATUS.light = 1;
+                }
+            }
+            Act::Buzzer => {
                 self.buzzer.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.buzzer=1;}
-            },
+                unsafe {
+                    ACTUATOR_STATUS.buzzer = 1;
+                }
+            }
         }
     }
-    
+
     ///使用async只是为了保持封装一致
-    pub async fn set_off(&mut self,act: Act){
+    pub async fn set_off(&mut self, act: Act) {
         match act {
-            Act::Water=> { 
+            Act::Water => {
                 self.water.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.water=0;}
-            },
-            Act::Fan=> { 
+                unsafe {
+                    ACTUATOR_STATUS.water = 0;
+                }
+            }
+            Act::Fan => {
                 self.fan.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.fan=0;}
-            },
-            Act::Light=> { 
+                unsafe {
+                    ACTUATOR_STATUS.fan = 0;
+                }
+            }
+            Act::Light => {
                 self.light.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.light=0;}
-            },
-            Act::Buzzer=> { 
+                unsafe {
+                    ACTUATOR_STATUS.light = 0;
+                }
+            }
+            Act::Buzzer => {
                 self.buzzer.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.buzzer=0;}
-            },
+                unsafe {
+                    ACTUATOR_STATUS.buzzer = 0;
+                }
+            }
         }
     }
-    pub async fn set_pulse(&mut self,pulse:(Act,u64)){
-        let (act,time)=pulse;
+    pub async fn set_pulse(&mut self, pulse: (Act, u64)) {
+        let (act, time) = pulse;
+        // self.set_on(act).await;
         match act {
-            Act::Water=> {
+            Act::Water => {
                 self.water.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.water=1;}
+                unsafe {
+                    ACTUATOR_STATUS.water = 1;
+                }
                 Timer::after(Duration::from_secs(time)).await;
                 self.water.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.water=0;}
-            },
-            Act::Fan=> {
+                unsafe {
+                    ACTUATOR_STATUS.water = 0;
+                }
+            }
+            Act::Fan => {
                 self.fan.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.fan=1;}
+                unsafe {
+                    ACTUATOR_STATUS.fan = 1;
+                }
                 Timer::after(Duration::from_secs(time)).await;
                 self.fan.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.fan=0;}
-            },
-            Act::Light=> {
+                unsafe {
+                    ACTUATOR_STATUS.fan = 0;
+                }
+            }
+            Act::Light => {
                 self.light.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.light=1;}
+                unsafe {
+                    ACTUATOR_STATUS.light = 1;
+                }
                 Timer::after(Duration::from_secs(time)).await;
                 self.light.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.light=0;}
-            },
-            Act::Buzzer=> {
+                unsafe {
+                    ACTUATOR_STATUS.light = 0;
+                }
+            }
+            Act::Buzzer => {
                 self.buzzer.set_level(Level::Low);
-                unsafe {ACTUATOR_STATUS.buzzer=1;}
+                unsafe {
+                    ACTUATOR_STATUS.buzzer = 1;
+                }
                 Timer::after(Duration::from_secs(time)).await;
                 self.buzzer.set_level(Level::High);
-                unsafe {ACTUATOR_STATUS.buzzer=0;}
-            },
+                unsafe {
+                    ACTUATOR_STATUS.buzzer = 0;
+                }
+            }
         }
     }
 }
 ///执行器
 #[derive(Copy, Clone)]
-pub enum Act{
+pub enum Act {
     Water,
     Fan,
     Light,
-    Buzzer
+    Buzzer,
 }
 #[derive(Copy, Clone)]
-pub enum Switch{
+pub enum Switch {
     On,
     Off,
     Pulse(u64),
 }
-pub enum Ack{
+pub enum Ack {
     On(Act),
     Off(Act),
-    Pulse(Act,u64),
+    Pulse(Act, u64),
 }
 impl Ack {
-    pub fn analysis(&self)->(Act,Switch){
+    pub fn analysis(&self) -> (Act, Switch) {
         match self {
-            Ack::On(act)=>(*act,Switch::On),
-            Ack::Off(act)=>(*act,Switch::Off),
-            Ack::Pulse(act,time)=>(*act,Switch::Pulse(*time))
+            Ack::On(act) => (*act, Switch::On),
+            Ack::Off(act) => (*act, Switch::Off),
+            Ack::Pulse(act, time) => (*act, Switch::Pulse(*time)),
         }
     }
 }
