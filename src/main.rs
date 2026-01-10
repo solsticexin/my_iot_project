@@ -13,7 +13,6 @@ mod soil;
 mod st7735;
 mod uart;
 
-use defmt::info;
 
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
@@ -27,7 +26,6 @@ use embassy_stm32::{
     spi::{self, Spi},
     time::{khz, mhz},
 };
-use embassy_time::{Duration, Timer};
 
 use fmt::error;
 

@@ -10,6 +10,22 @@ use serde::Deserialize;
 use crate::actuator::{Ack, Act, Actuator,Switch, ACTUATOR_STATUS};
 
 
+pub struct DataCollect{
+    pub humi:u8,
+    pub temp:u8,
+    pub light:f32,
+    pub soil:u16,
+}
+
+///创建static 结构体用来给存储屏幕绘制的数据。
+/// 不采用信道是因为传感器收集数据比较慢，生产者慢，而消费者消费很快。会阻塞tx的上传任务，导致用户误判
+///由于这个static只在屏幕绘制使用所以不需要加互斥锁。
+pub static mut SENSOR_COLLECT_DATA:DataCollect=DataCollect{
+    humi:0,
+    temp:0,
+    light:0.0,
+    soil:0,
+};
 #[task]
 pub async fn control(
     tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,4>,
@@ -25,9 +41,8 @@ pub async fn control(
             warn!("dht11读取超时");
             (0, 0)
         });
-
         //湿度,温度解构不是临时参数
-        let (humi,temp)=dht11_data;
+        let (dht11_humi, dht11_temp)=dht11_data;
 
         let bh1750_data= with_timeout(
             Duration::from_millis(2500),
@@ -44,6 +59,14 @@ pub async fn control(
             warn!("soil读取超时");
             0
         });
+        //保存信道的值在static中来给屏幕绘制
+        unsafe {
+            SENSOR_COLLECT_DATA.humi= dht11_humi;
+            SENSOR_COLLECT_DATA.temp= dht11_temp;
+            SENSOR_COLLECT_DATA.light=bh1750_data;
+            SENSOR_COLLECT_DATA.soil=soil_data;
+        }
+
         let water=unsafe{ACTUATOR_STATUS.water};
         let fan=unsafe{ACTUATOR_STATUS.fan};
         let light=unsafe{ACTUATOR_STATUS.light};
@@ -51,8 +74,8 @@ pub async fn control(
         
         let json_part: String<128> = format!(
             "{{\"type\":\"data\",\"temp\":{},\"humi\":{},\"soil\":{},\"lux\":{},\"water\":{},\"light\":{},\"fan\":{},\"buzzer\":{}}}",
-            temp as f32 ,
-            humi as f32 ,
+            dht11_temp as f32,
+            dht11_humi as f32,
             soil_data,
             bh1750_data,
             water,
@@ -62,7 +85,6 @@ pub async fn control(
         ).unwrap();
         
         let frame: String<128> = format!("{}\r\n", json_part).unwrap();
-        
         tx_sender.send(frame).await;
     }
 }
