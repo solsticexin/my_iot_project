@@ -31,7 +31,6 @@ embassy-stm32 = { version = "0.4.0", features = [
 ] }
 embedded-hal = "1.0.0"
 
-embedded-graphics = "0.8.1"
 embassy-hal-internal = "0.3.0"
 static_cell = "2.1.1"
 embedded-hal-bus = { version = "0.3.0", features = ["async"] }
