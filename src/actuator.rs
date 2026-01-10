@@ -1,5 +1,4 @@
 use embassy_stm32::gpio::{Level, Output};
-use embassy_time::{Duration, Timer};
 
 ///增加静态bool用来打断命令该命令只在 use crate::uart::uart_rx;中修改，
 
@@ -43,14 +42,6 @@ impl<'d> Actuator<'d> {
             fan,
             light,
             buzzer,
-        }
-    }
-
-    pub async fn set(&mut self, act: Act, switch: Switch) {
-        match switch {
-            Switch::On => self.set_on(act).await,
-            Switch::Off => self.set_off(act).await,
-            Switch::Pulse(time) => self.set_pulse((act, time)).await,
         }
     }
 
@@ -106,56 +97,6 @@ impl<'d> Actuator<'d> {
                 }
             }
             Act::Buzzer => {
-                self.buzzer.set_level(Level::High);
-                unsafe {
-                    ACTUATOR_STATUS.buzzer = 0;
-                }
-            }
-        }
-    }
-    pub async fn set_pulse(&mut self, pulse: (Act, u64)) {
-        let (act, time) = pulse;
-        // self.set_on(act).await;
-        match act {
-            Act::Water => {
-                self.water.set_level(Level::Low);
-                unsafe {
-                    ACTUATOR_STATUS.water = 1;
-                }
-                Timer::after(Duration::from_secs(time)).await;
-                self.water.set_level(Level::High);
-                unsafe {
-                    ACTUATOR_STATUS.water = 0;
-                }
-            }
-            Act::Fan => {
-                self.fan.set_level(Level::Low);
-                unsafe {
-                    ACTUATOR_STATUS.fan = 1;
-                }
-                Timer::after(Duration::from_secs(time)).await;
-                self.fan.set_level(Level::High);
-                unsafe {
-                    ACTUATOR_STATUS.fan = 0;
-                }
-            }
-            Act::Light => {
-                self.light.set_level(Level::Low);
-                unsafe {
-                    ACTUATOR_STATUS.light = 1;
-                }
-                Timer::after(Duration::from_secs(time)).await;
-                self.light.set_level(Level::High);
-                unsafe {
-                    ACTUATOR_STATUS.light = 0;
-                }
-            }
-            Act::Buzzer => {
-                self.buzzer.set_level(Level::Low);
-                unsafe {
-                    ACTUATOR_STATUS.buzzer = 1;
-                }
-                Timer::after(Duration::from_secs(time)).await;
                 self.buzzer.set_level(Level::High);
                 unsafe {
                     ACTUATOR_STATUS.buzzer = 0;

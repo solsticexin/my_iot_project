@@ -1,11 +1,13 @@
 use defmt::warn;
 use embassy_executor::task;
+use embassy_futures::select::select;
+use embassy_futures::select::Either;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Receiver, Sender};
-use embassy_time::{with_timeout, Duration};
+use embassy_time::{with_timeout, Duration, Instant, Timer};
 use heapless::{format, String};
 use serde::Deserialize;
-use crate::actuator::{Ack, Act, Actuator, ACTUATOR_STATUS};
+use crate::actuator::{Ack, Act, Actuator,Switch, ACTUATOR_STATUS};
 
 
 #[task]
@@ -71,18 +73,107 @@ pub async fn sub_control(
     tx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,4>,
     mut actuator:Actuator<'static>,
 ){
+    //状态机：记录每个设备预定关闭时间的时刻点
+    //None 表示不需要自动关闭
+    //Some(t) 表示需要在t时刻关闭
+    let mut deadline_water:Option<Instant>=None;
+    let mut deadline_fan:Option<Instant>=None;
+    let mut deadline_light:Option<Instant>=None;
+    let mut deadline_buzzer:Option<Instant>=None;
     loop {
-        let rx_cmd_frame=rx_receiver.receive().await;
-        let temp=rx_cmd_frame.as_str();
-        let cmd:Cmd=match serde_json_core::from_str(temp) {
-            Ok((cmd,_))=>cmd,
-            Err(_)=>{warn!("反序列化失败");continue;}
+        //-------------第一步计算还要睡多久----------------
+        let next_wake_time=[deadline_water,deadline_fan,deadline_light,deadline_buzzer]
+            .iter()//遍历四个状态
+            .filter_map(|&d|d) //过滤None
+            .min(); //找到所有some中的最小值
+        //创建“等待定时器”的任务future
+        let time_future=async {
+            match next_wake_time {
+                Some(time) =>{
+                    //存在定时任务
+                    Timer::at(time).await;
+                },
+                None=>{
+                    //没有定时就全部挂起.pending会被挂起，直到被select取消
+                    core::future::pending::<()>().await;
+                }
+            }
         };
-        let cmd=cmd.analysis();
-        let frame=ack_frame_wrap(&cmd);
-        let (act,switch)=cmd.analysis();
-        actuator.set(act,switch).await;
-        tx_sender.send(frame).await;
+        //--------------第二步开始竞赛select------------------
+        //receiver和timer_future竞赛
+        match select(rx_receiver.receive(),time_future).await {
+            //结果A信道先发送命令
+            Either::First(rx_cmd_frame)=>{
+                let temp=rx_cmd_frame.as_str();
+                if let Ok((cmd,_))=serde_json_core::from_str::<Cmd>(temp){
+                    let ack=cmd.analysis();
+                    let (act,switch)=ack.analysis();
+                    match switch {
+                        Switch::On=>{
+                            actuator.set_on(act).await;
+                            match act {
+                                Act::Water=>deadline_water=None,
+                                Act::Fan=>deadline_fan=None,
+                                Act::Light=>deadline_light=None,
+                                Act::Buzzer=>deadline_buzzer=None,
+                            }
+                        },
+                        Switch::Off=>{
+                            actuator.set_off(act).await;
+                            match act {
+                                Act::Water=>deadline_water=None,
+                                Act::Fan=>deadline_fan=None,
+                                Act::Light=>deadline_light=None,
+                                Act::Buzzer=>deadline_buzzer=None,
+                            }
+                        },
+                        Switch::Pulse(secs)=>{
+                            actuator.set_on(act).await;
+                            let close_at=Instant::now()+Duration::from_secs(secs);
+                            match act {
+                                Act::Water=>deadline_water=Some(close_at),
+                                Act::Fan=>deadline_fan=Some(close_at),
+                                Act::Light=>deadline_light=Some(close_at),
+                                Act::Buzzer=>deadline_buzzer=Some(close_at),
+                            }
+                        }
+                    }
+                    //发送ack回复
+                    let frame=ack_frame_wrap(&ack);
+                    tx_sender.send(frame).await;
+                }
+            },
+            //结果B，时间先到了，证明期间没有新的命令发送过来
+            Either::Second(_)=>{
+                //记录当前时间
+                let now=Instant::now();
+
+                if let Some(d)=deadline_water{
+                    if now>d{
+                        actuator.set_off(Act::Water).await;
+                        deadline_water=None;
+                    }
+                }
+                if let Some(d)=deadline_fan{
+                    if now>d{
+                        actuator.set_off(Act::Fan).await;
+                        deadline_fan=None;
+                    }
+                }
+                if let Some(d)=deadline_light{
+                    if now>d{
+                        actuator.set_off(Act::Light).await;
+                        deadline_light=None;
+                    }
+                }
+                if let Some(d)=deadline_buzzer{
+                    if now>d{
+                        actuator.set_off(Act::Buzzer).await;
+                        deadline_buzzer=None;
+                    }
+                }
+            }
+        }
     }
 }
 
