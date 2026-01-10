@@ -42,7 +42,7 @@ pub async fn display_task(mut display: ST7735<'static>) {
         //获取传感器收集数据
         let dht11_humi:String<16>=format!("{}",unsafe{SENSOR_COLLECT_DATA.humi}).unwrap();
         let dht11_temp:String<16>=format!("{}",unsafe{SENSOR_COLLECT_DATA.temp}).unwrap();
-        let light:String<16>=format!("{:2}",unsafe{SENSOR_COLLECT_DATA.light}).unwrap();
+        let light:String<16>=format!("{:.2}",unsafe{SENSOR_COLLECT_DATA.light}).unwrap();
         let soil:String<16>=format!("{}",unsafe{SENSOR_COLLECT_DATA.soil}).unwrap();
         //显示温度数据
         let _ = draw_digits(
