@@ -6,7 +6,7 @@ mod bh1750;
 mod config;
 mod control_center;
 mod dht11;
-mod display_task;
+mod display;
 mod fmt;
 mod font;
 mod soil;
@@ -184,7 +184,7 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    match spawner.spawn(display_task::display_task(display)) {
+    match spawner.spawn(display::display_task(display)) {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to spawn display_task: {}", e)

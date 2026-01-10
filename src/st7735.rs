@@ -395,16 +395,14 @@ impl<'d> ST7735<'d> {
     /// - `color`: 填充颜色 (Fill color)
     pub async fn clear_screen(&mut self, color: u16) -> Result<(), embassy_stm32::spi::Error> {
         // 设置窗口为整个屏幕 (Set window to entire screen)
-        // 扩大范围以覆盖所有区域，避免边缘花屏
-        // ST7735有偏移，需要稍微超出标准范围
-        self.set_window(0, 0, 160, 128).await?;
+        // ST7735有偏移，可以在此处设置。
+        self.set_window(0, 0, 128, 160).await?;
 
         // 准备颜色数据 (Prepare color data)
         let color_bytes = [(color >> 8) as u8, (color & 0xFF) as u8];
 
         // 填充整个屏幕 (Fill entire screen)
-        // 扩大尺寸以覆盖边缘: 162×132 = 21384 像素
-        for _i in 0..(160 * 128) {
+        for _i in 0..(128 * 160) {
             self.write_data(&color_bytes).await?;
         }
 
@@ -415,113 +413,13 @@ impl<'d> ST7735<'d> {
     // 字符显示函数 (Character Display Functions)
     // ========================================================================
 
-    /// 显示汉字"温度" (Display "Temperature" in Chinese)
-    ///
-    /// # 参数 (Parameters)
-    /// - `x`: 起始X坐标 (Start X coordinate)
-    /// - `y`: 起始Y坐标 (Start Y coordinate)
-    /// - `fg_color`: 前景色 (Foreground color)
-    /// - `bg_color`: 背景色 (Background color)
-    pub async fn draw_temperature(
-        &mut self,
-        x: u16,
-        y: u16,
-        fg_color: u16,
-        bg_color: u16,
-    ) -> Result<(), embassy_stm32::spi::Error> {
-        self.draw_chinese_char(x, y, &crate::font::CHAR_TEMPERATURE, fg_color, bg_color)
-            .await
-    }
-
-    /// 显示汉字"湿度" (Display "Humidity" in Chinese)
-    ///
-    /// # 参数 (Parameters)
-    /// - `x`: 起始X坐标 (Start X coordinate)
-    /// - `y`: 起始Y坐标 (Start Y coordinate)
-    /// - `fg_color`: 前景色 (Foreground color)
-    /// - `bg_color`: 背景色 (Background color)
-    pub async fn draw_humidity(
-        &mut self,
-        x: u16,
-        y: u16,
-        fg_color: u16,
-        bg_color: u16,
-    ) -> Result<(), embassy_stm32::spi::Error> {
-        self.draw_chinese_char(x, y, &crate::font::CHAR_HUMIDITY, fg_color, bg_color)
-            .await
-    }
-
-    /// 显示汉字"土壤" (Display "Soil" in Chinese)
-    ///
-    /// # 参数 (Parameters)
-    /// - `x`: 起始X坐标 (Start X coordinate)
-    /// - `y`: 起始Y坐标 (Start Y coordinate)
-    /// - `fg_color`: 前景色 (Foreground color)
-    /// - `bg_color`: 背景色 (Background color)
-    pub async fn draw_soil(
-        &mut self,
-        x: u16,
-        y: u16,
-        fg_color: u16,
-        bg_color: u16,
-    ) -> Result<(), embassy_stm32::spi::Error> {
-        self.draw_chinese_char(x, y, &crate::font::CHAR_SOIL, fg_color, bg_color)
-            .await
-    }
-
-    /// 显示汉字"光照" (Display "Light" in Chinese)
-    ///
-    /// # 参数 (Parameters)
-    /// - `x`: 起始X坐标 (Start X coordinate)
-    /// - `y`: 起始Y坐标 (Start Y coordinate)
-    /// - `fg_color`: 前景色 (Foreground color)
-    /// - `bg_color`: 背景色 (Background color)
-    pub async fn draw_light(
-        &mut self,
-        x: u16,
-        y: u16,
-        fg_color: u16,
-        bg_color: u16,
-    ) -> Result<(), embassy_stm32::spi::Error> {
-        self.draw_chinese_char(x, y, &crate::font::CHAR_LIGHT, fg_color, bg_color)
-            .await
-    }
-
-    /// 显示数字字符串 (Display digit string)
-    ///
-    /// # 参数 (Parameters)
-    /// - `x`: 起始X坐标 (Start X coordinate)
-    /// - `y`: 起始Y坐标 (Start Y coordinate)
-    /// - `text`: 要显示的数字字符串 (Digit string to display, e.g., "12.5")
-    /// - `spacing`: 字符间距（像素） (Character spacing in pixels)
-    /// - `fg_color`: 前景色 (Foreground color)
-    /// - `bg_color`: 背景色 (Background color)
-    pub async fn draw_digits(
-        &mut self,
-        mut x: u16,
-        y: u16,
-        text: &str,
-        spacing: u16,
-        fg_color: u16,
-        bg_color: u16,
-    ) -> Result<(), embassy_stm32::spi::Error> {
-        for ch in text.chars() {
-            if let Some(bitmap) = crate::font::get_digit_bitmap(ch) {
-                self.draw_ascii_char(x, y, bitmap, fg_color, bg_color)
-                    .await?;
-                x += 16 + spacing; // ASCII字符宽度为16像素 + 间距
-            }
-        }
-        Ok(())
-    }
-
     // ========================================================================
-    // 内部辅助函数 (Internal Helper Functions)
+    // 内部辅助函数 (Internal Helper Functions) -> 公开函数
     // ========================================================================
 
     /// 绘制单个汉字字符 (Draw single Chinese character)
     /// 汉字为16x16，占据6列（48像素宽）
-    async fn draw_chinese_char(
+    pub async fn draw_chinese_char(
         &mut self,
         x: u16,
         y: u16,
@@ -562,7 +460,7 @@ impl<'d> ST7735<'d> {
 
     /// 绘制单个ASCII字符 (Draw single ASCII character)
     /// ASCII字符为16x16，占据2列（16像素宽）
-    async fn draw_ascii_char(
+    pub async fn draw_ascii_char(
         &mut self,
         x: u16,
         y: u16,
