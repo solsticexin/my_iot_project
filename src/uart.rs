@@ -28,7 +28,7 @@ pub async fn uart_tx(mut tx:UartTx<'static,Async>,
 pub async fn uart_rx(mut rx:UartRx<'static,Async>,
                      rx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>)
 {
-    let mut buffer=[0u8,128];
+    let mut buffer=[0u8;128];
     loop {
         let len=match rx.read_until_idle(&mut buffer).await {
             Ok(val)=>val,
@@ -38,14 +38,22 @@ pub async fn uart_rx(mut rx:UartRx<'static,Async>,
             Ok(val)=>val,
             Err(_)=>{warn!("uart_rx读取数据转换utf8 str失败");continue;}
         };
-        let frame=frame.parse::<String<128>>().unwrap();
+        // let frame=frame.parse::<String<128>>().unwrap();
+        let frame =match frame.parse::<String<128>>() {
+            Ok(val)=>val,
+            Err(_)=>{
+                warn!("转换失败");
+                continue;
+            }
+
+        };
         rx_sender.send(frame).await;
-    }
+}
 }
 
-#[cfg(test)]
+
 #[task]
-pub async fn _test_uart_rx(mut _rx:UartRx<'static,Async>,
+pub async fn _test_uart_rx(_rx:UartRx<'static,Async>,
                      rx_sender:Sender<'static,CriticalSectionRawMutex,String<128>,2>)
 {
     //测试代码

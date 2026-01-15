@@ -182,6 +182,13 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    // match spawner.spawn(uart::_test_uart_rx(rx,rx_sender)) {
+    //     Ok(_) => (),
+    //     Err(e) => {
+    //         error!("Failed to spawn uart_rx task: {}", e)
+    //     }
+    // }
+
     match spawner.spawn(display::display_task(display)) {
         Ok(_) => (),
         Err(e) => {

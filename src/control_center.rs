@@ -84,7 +84,14 @@ pub async fn control(
             buzzer
         ).unwrap();
         
-        let frame: String<128> = format!("{}\r\n", json_part).unwrap();
+        // let frame: String<128> = format!("{}\r\n", json_part).unwrap();
+        let frame:String<128>=match format!("{}\r\n", json_part) {
+            Ok(val)=>val,
+            Err(_)=>{
+                warn!("control frame 转换失败");
+                continue;
+            }
+        };
         tx_sender.send(frame).await;
     }
 }
@@ -128,7 +135,11 @@ pub async fn sub_control(
             Either::First(rx_cmd_frame)=>{
                 let temp=rx_cmd_frame.as_str();
                 if let Ok((cmd,_))=serde_json_core::from_str::<Cmd>(temp){
-                    let ack=cmd.analysis();
+                    // let ack=cmd.analysis();
+                    //已经在analysis中封装了错误日志，不需要在处理，直接continue开启下一次循环。
+                    let Some(ack)=cmd.analysis()else {
+                        continue;
+                    };
                     let (act,switch)=ack.analysis();
                     match switch {
                         Switch::On=>{
@@ -204,25 +215,34 @@ struct Cmd {
     r#type: String<16>,
     target: String<16>,
     action: String<16>,
-    time: i32,
+    time: u64,
 }
 impl Cmd {
-    pub fn analysis(&self)->Ack{
+    pub fn analysis(&self)->Option<Ack>{
         let target=self.target.as_str();
         let action=self.action.as_str();
-        let time=self.time;
+        let time=if self.time > 5*60{
+            warn!("time 最多持续5分钟,已经改为默认参数5s");
+            5
+        }else { self.time };
         let act=match target {
             "water"=>Act::Water,
             "fan" =>Act::Fan,
             "light" =>Act::Light,
             "buzzer" =>Act::Buzzer,
-            _ => unreachable!()
+            _ => {
+                warn!("收到未知的target参数的命令：“{}”",action);
+                return None;
+            }
         };
         match action {
-            "on" => Ack::On(act),
-            "off" =>Ack::Off(act),
-            "pulse" => Ack::Pulse(act,time as u64),
-            _ => unreachable!()
+            "on" => Option::from(Ack::On(act)),
+            "off" => Option::from(Ack::Off(act)),
+            "pulse" => Option::from(Ack::Pulse(act, time)),
+            _ => {
+                warn!("收到未知的action参数的命令：“{}”",action);
+                None
+            },
         }
     }
 }
