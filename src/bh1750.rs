@@ -19,24 +19,30 @@ pub async fn bh1750_read(
     defmt::info!("BH1750 任务已启动");
 
     // 初始化传感器：首先向设备发送通电命令
-    match i2c
-        .write(config::BH1750_ADDR, &[config::CMD_POWER_ON])
-        .await
-    {
-        Ok(_) => defmt::info!("BH1750 通电成功！"),
-        Err(e) => defmt::info!("IIC 错误： {:?}", e),
-    }
+   loop{
+        match i2c
+            .write(config::BH1750_ADDR, &[config::CMD_POWER_ON])
+            .await
+        {
+            Ok(_) => defmt::info!("BH1750 通电成功！"),
+            Err(e) => {defmt::info!("IIC 错误： {:?}", e);continue;},
+        }
 
-    // 设置传感器为高分辨率模式 (H-Resolution Mode)
-    if let Err(e) = i2c
-        .write(config::BH1750_ADDR, &[config::CMD_H_RES_MODE])
-        .await
-    {
-        defmt::info!("IIC 模式设置失败：{:?}", e);
-    }
+        Timer::after(Duration::from_micros(10)).await;
+
+        // 设置传感器为高分辨率模式 (H-Resolution Mode)
+        if let Err(e) = i2c
+            .write(config::BH1750_ADDR, &[config::CMD_H_RES_MODE])
+            .await
+        {
+            defmt::warn!("IIC 模式设置失败：{:?}", e);
+            continue;
+        }
+        break;
+   }
 
     // 等待传感器稳定 (高分辨率模式需要约 180ms)
-    Timer::after(Duration::from_millis(180)).await;
+    Timer::after(Duration::from_millis(200)).await;
 
     // 进入无限循环，每秒读取一次光照数据
     loop {
